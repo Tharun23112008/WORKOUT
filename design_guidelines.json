@@ -1,0 +1,133 @@
+{
+  "brand_identity": {
+    "name": "PROTOCOL",
+    "archetype": "The Performance Pro",
+    "emotional_tone": "Elite, Precision, Scientific, Raw",
+    "visual_style": "Dark Mode, High Contrast, Brutalist Tech",
+    "keywords": ["Optimization", "Data", "Performance", "Grit"]
+  },
+  "typography": {
+    "primary_font": {
+      "name": "Barlow Condensed",
+      "weights": ["400", "700", "900"],
+      "usage": "Headings, Hero Text, Big Numbers",
+      "import_url": "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;700;900&display=swap"
+    },
+    "secondary_font": {
+      "name": "Manrope",
+      "weights": ["400", "500", "600"],
+      "usage": "Body Text, UI Elements, Inputs",
+      "import_url": "https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600&display=swap"
+    },
+    "rules": {
+      "headings": "uppercase tracking-tighter leading-none font-black",
+      "body": "text-base tracking-wide text-muted-foreground",
+      "labels": "text-xs uppercase tracking-[0.2em] font-bold text-accent"
+    }
+  },
+  "colors": {
+    "palette": {
+      "background": "#0A0A0A",
+      "foreground": "#FFFFFF",
+      "card": "#121212",
+      "card_foreground": "#FFFFFF",
+      "primary": "#007AFF",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#1F1F22",
+      "secondary_foreground": "#A1A1AA",
+      "accent": "#FF3B30",
+      "accent_foreground": "#FFFFFF",
+      "muted": "#27272A",
+      "muted_foreground": "#A1A1AA",
+      "border": "#27272A",
+      "input": "#27272A",
+      "ring": "#007AFF"
+    },
+    "usage": {
+      "background_gradient": "bg-gradient-to-b from-[#0A0A0A] to-[#000000]",
+      "primary_action": "bg-[#007AFF] hover:bg-[#0063CC] text-white shadow-[0_0_20px_rgba(0,122,255,0.3)]",
+      "destructive_action": "bg-[#FF3B30] hover:bg-[#D63025] text-white",
+      "glass_surface": "bg-white/5 backdrop-blur-xl border border-white/10"
+    }
+  },
+  "layout_strategies": {
+    "landing_page": {
+      "hero_section": "Full viewport height (min-h-screen). Dark video/image background with black overlay (opacity-60). Centered massive typography.",
+      "grid_system": "Bento Grid (Mode A). Use 'Tetris' layout for features. Mixed col-spans.",
+      "spacing": "Generous. py-24 or py-32 between sections. Gap-8 for grids."
+    },
+    "quiz_flow": {
+      "container": "Centered, max-w-2xl. Focused mode (no distractions).",
+      "progress_bar": "Fixed top or sticky. Volt Blue fill. Height 4px.",
+      "cards": "Large click areas. Selected state: Border Volt Blue + Glow."
+    },
+    "results_page": {
+      "free_snapshot": "High visibility. Count-up animations for calories/macros.",
+      "paywall_blur": "Blur-md or blur-lg on the 'Detailed Plan' section. Overlay with Glassmorphism card.",
+      "sticky_cta": "Mobile: Fixed bottom bar 'Unlock Full Protocol'."
+    }
+  },
+  "components": {
+    "buttons": {
+      "style": "Sharp edges (rounded-sm) or minimal radius (rounded-md). Uppercase text. Bold.",
+      "variants": {
+        "default": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg hover:shadow-primary/20 transition-all duration-300",
+        "outline": "border-2 border-primary text-primary hover:bg-primary hover:text-white transition-all",
+        "ghost": "hover:bg-accent hover:text-white"
+      }
+    },
+    "inputs": {
+      "style": "bg-secondary border-transparent focus:border-primary focus:ring-1 focus:ring-primary h-12 text-lg px-4 rounded-md transition-all"
+    },
+    "cards": {
+      "style": "bg-card border border-border/40 hover:border-primary/50 transition-colors duration-300 rounded-lg p-6 or p-8"
+    }
+  },
+  "visual_enhancers": {
+    "textures": "Add a subtle 'noise' overlay opacity-5 to the background to kill digital flatness.",
+    "borders": "1px border with very low opacity (white/10) for structure.",
+    "glows": "Use drop-shadow-[0_0_15px_rgba(0,122,255,0.5)] for active states.",
+    "icons": "Lucide React. Stroke width 1.5px. Sharp or rounded depending on context."
+  },
+  "motion": {
+    "library": "framer-motion",
+    "page_load": "Staggered fade-up (opacity 0 -> 1, y 20 -> 0).",
+    "quiz_transition": "AnimatePresence. Slide in from right, slide out to left.",
+    "hover_effects": "Scale 1.02 on cards. Brightness boost."
+  },
+  "assets": {
+    "images": {
+      "hero_bg": "https://images.unsplash.com/photo-1740895307943-7878df384db1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzNTl8MHwxfHNlYXJjaHwzfHxneW0lMjB3b3Jrb3V0JTIwZGFyayUyMGxpZ2h0aW5nfGVufDB8fHx8MTc3MjUyODQ3OHww&ixlib=rb-4.1.0&q=85",
+      "nutrition_preview": "https://images.unsplash.com/photo-1761315600943-d8a5bb0c499f?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxNzV8MHwxfHNlYXJjaHwzfHxoZWFsdGh5JTIwbWVhbCUyMHByZXAlMjBjb250YWluZXIlMjBhZXN0aGV0aWN8ZW58MHx8fHwxNzcyNTI4NDc4fDA&ixlib=rb-4.1.0&q=85",
+      "transformation_abstract": "https://images.unsplash.com/photo-1700784795176-7ff886439d79?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjd8MHwxfHNlYXJjaHwyfHxmaXRuZXNzJTIwdHJhbnNmb3JtYXRpb24lMjBzaWxob3VldHRlJTIwYWJzdHJhY3R8ZW58MHx8fHwxNzcyNTI4NDY5fDA&ixlib=rb-4.1.0&q=85"
+    },
+    "icons": [
+      "Activity",
+      "Zap",
+      "Dumbbell",
+      "Utensils",
+      "Lock",
+      "CheckCircle2",
+      "ChevronRight"
+    ]
+  },
+  "universal_guidelines": [
+    "Do not use generic gradients. Use solid colors or subtle noise.",
+    "Do not center align everything. Use asymmetry for tension.",
+    "Always add data-testid to interactive elements.",
+    "Use Lucide icons.",
+    "Ensure 3:1 contrast ratio for large text, 4.5:1 for normal text.",
+    "Mobile images must be max-h-[80vh].",
+    "Use 'sonner' for toasts.",
+    "Components must use named exports."
+  ],
+  "implementation_steps": [
+    "1. Setup Tailwind Theme (colors, fonts).",
+    "2. Create Layout Wrapper (Navbar, Footer, Background Noise).",
+    "3. Build Landing Page (Hero, Features, CTA).",
+    "4. Build Quiz Engine (State management, Steps, Progress).",
+    "5. Build Results Page (Calculation logic, Free vs Paid view).",
+    "6. Build Payment Modal/Stripe integration mock.",
+    "7. Build PDF Generator (hidden, triggered after pay)."
+  ]
+}

@@ -70,13 +70,13 @@ export const Success = () => {
           animate={{ opacity: 1, y: 0 }}
           className="max-w-2xl text-center"
         >
-          <div className="mb-6">
-            <CheckCircle2 className="w-20 h-20 text-primary mx-auto" strokeWidth={1.5} />
+          <div className="bg-gradient-main w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 glow-gradient">
+            <CheckCircle2 className="w-14 h-14 text-white" strokeWidth={2} />
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight mb-4">
-            Payment Successful
+          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight mb-4">
+            <span className="gradient-text">Payment Successful</span>
           </h1>
-          <p className="text-lg text-muted-foreground mb-10 leading-relaxed">
+          <p className="text-xl text-muted-foreground mb-12 leading-relaxed">
             Your personalized 365 Days of Discipline blueprint is ready.
           </p>
           
@@ -84,15 +84,15 @@ export const Success = () => {
             data-testid="download-pdf-btn"
             onClick={handleDownload}
             size="lg"
-            className="bg-primary hover:bg-primary/90 text-white text-base px-12 py-6 rounded-full font-semibold glow-purple-hover transition-all duration-300"
+            className="bg-gradient-button text-white text-lg px-14 py-8 rounded-full font-semibold glow-gradient-hover transition-all duration-300 transform hover:scale-105 border-0"
           >
-            <Download className="w-5 h-5 mr-2" />
+            <Download className="w-6 h-6 mr-2" />
             Download Your PDF
           </Button>
 
-          <div className="mt-12 bg-card border border-border/40 rounded-2xl p-8">
-            <p className="text-sm text-muted-foreground mb-2 leading-relaxed">Remember:</p>
-            <p className="font-semibold leading-relaxed">Consistency beats perfection. Follow this plan for at least 8-12 weeks.</p>
+          <div className="mt-16 glass-morphism-strong rounded-full p-10">
+            <p className="text-sm text-muted-foreground mb-3 leading-relaxed">Remember:</p>
+            <p className="font-semibold leading-relaxed text-lg text-white">Consistency beats perfection. Follow this plan for at least 8-12 weeks.</p>
           </div>
         </motion.div>
       </div>

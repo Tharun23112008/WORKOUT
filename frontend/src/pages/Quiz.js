@@ -181,10 +181,10 @@ export const Quiz = ({ onComplete }) => {
               transition={{ duration: 0.3 }}
               data-testid={`quiz-step-${currentStep}`}
             >
-              <p className="text-xs uppercase tracking-widest font-semibold text-accent mb-4">
+              <p className="text-xs uppercase tracking-widest font-semibold gradient-text mb-6">
                 QUESTION {currentStep + 1} OF {QUESTIONS.length}
               </p>
-              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight leading-tight mb-10">
+              <h2 className="text-4xl sm:text-5xl font-bold tracking-tight leading-tight mb-12 text-white">
                 {currentQuestion.question}
               </h2>
 
@@ -197,9 +197,9 @@ export const Quiz = ({ onComplete }) => {
                       onClick={() => handleChoice(option.value)}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      className="w-full bg-card border-2 border-border/40 hover:border-primary transition-all duration-300 rounded-2xl p-6 text-left glow-purple-hover"
+                      className="w-full glass-morphism hover:glass-morphism-strong border-2 border-transparent hover:border-primary/50 transition-all duration-300 rounded-full p-8 text-left"
                     >
-                      <div className="font-bold text-lg">{option.label}</div>
+                      <div className="font-bold text-xl text-white">{option.label}</div>
                       {option.subtitle && (
                         <div className="text-sm text-muted-foreground mt-1">{option.subtitle}</div>
                       )}
@@ -222,7 +222,7 @@ export const Quiz = ({ onComplete }) => {
                         }
                       }}
                       placeholder={currentQuestion.placeholder}
-                      className="flex-1 bg-secondary border-2 border-transparent focus:border-primary focus:ring-2 focus:ring-primary/30 h-14 text-lg px-4 rounded-2xl transition-all"
+                      className="flex-1 glass-morphism border-2 border-transparent focus:border-primary focus:ring-2 focus:ring-primary/30 h-16 text-lg px-6 rounded-full transition-all text-white placeholder:text-muted-foreground"
                       min={currentQuestion.min}
                       max={currentQuestion.max}
                     />
@@ -231,7 +231,7 @@ export const Quiz = ({ onComplete }) => {
                       onClick={currentQuestion.type === 'number' ? handleNumberInput : handleTextInput}
                       disabled={!currentQuestion.optional && !inputValue}
                       size="lg"
-                      className="bg-primary hover:bg-primary/90 h-14 px-6 rounded-2xl glow-purple-hover"
+                      className="bg-gradient-button h-16 px-10 rounded-full glow-gradient-hover font-semibold border-0 transition-all duration-300 transform hover:scale-105"
                     >
                       <ChevronRight className="w-6 h-6" />
                     </Button>

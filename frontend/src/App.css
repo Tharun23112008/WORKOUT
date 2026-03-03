@@ -1,11 +1,12 @@
 .App {
   min-height: 100vh;
-  background: linear-gradient(to bottom, #0F0F0F, #000000);
+  background: #000000;
 }
 
 .quiz-card-selected {
-  border-color: #8B5CF6 !important;
-  box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+  background: linear-gradient(135deg, rgba(255, 91, 158, 0.15) 0%, rgba(52, 179, 210, 0.15) 100%) !important;
+  border: 2px solid rgba(255, 91, 158, 0.5) !important;
+  box-shadow: 0 8px 32px rgba(255, 91, 158, 0.3);
 }
 
 .blur-paywall {

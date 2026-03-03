@@ -177,11 +177,11 @@ def generate_pdf(quiz_data: QuizResponse) -> io.BytesIO:
     story = []
     styles = getSampleStyleSheet()
     
-    # Custom styles - minimalist, professional
+    # Minimal, clean styles
     title_style = ParagraphStyle(
-        'CustomTitle',
+        'Title',
         parent=styles['Heading1'],
-        fontSize=28,
+        fontSize=22,
         textColor=colors.black,
         spaceAfter=12,
         alignment=TA_CENTER,
@@ -191,46 +191,52 @@ def generate_pdf(quiz_data: QuizResponse) -> io.BytesIO:
     subtitle_style = ParagraphStyle(
         'Subtitle',
         parent=styles['Normal'],
-        fontSize=12,
+        fontSize=11,
         textColor=colors.HexColor('#444444'),
-        spaceAfter=30,
+        spaceAfter=24,
         alignment=TA_CENTER,
         fontName='Helvetica'
     )
     
     heading_style = ParagraphStyle(
-        'CustomHeading',
+        'Heading',
         parent=styles['Heading2'],
-        fontSize=18,
+        fontSize=14,
         textColor=colors.black,
-        spaceAfter=16,
-        spaceBefore=24,
+        spaceAfter=12,
+        spaceBefore=20,
         fontName='Helvetica-Bold'
     )
     
     # === COVER PAGE ===
     story.append(Spacer(1, 2*inch))
-    story.append(Paragraph("365 DAYS OF DISCIPLINE", title_style))
-    story.append(Paragraph("A Personalized Training & Nutrition Blueprint", subtitle_style))
-    story.append(Spacer(1, 0.5*inch))
-    story.append(Paragraph("Built from a real one-year transformation — tailored to you.", styles['Normal']))
+    story.append(Paragraph("365 Days of Discipline", title_style))
+    story.append(Paragraph("A Training and Nutrition Plan", subtitle_style))
+    story.append(Spacer(1, 0.3*inch))
+    story.append(Paragraph("Based on one year of consistent training.", styles['Normal']))
     story.append(PageBreak())
     
-    # Personal Info
-    story.append(Paragraph("YOUR PROFILE", heading_style))
+    # === INTRODUCTION ===
+    story.append(Paragraph("Introduction", heading_style))
+    intro_text = """I followed a bro split for 365 days. No missed sessions. No program changes. This document gives you the same structure with adjustments based on your inputs. The system works because it removes decisions. You show up, follow the plan, and track progress weekly. Nothing else matters for the first 12 weeks."""
+    story.append(Paragraph(intro_text, styles['Normal']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # === PERSONAL DATA ===
+    story.append(Paragraph("Your Profile", heading_style))
     profile_data = [
-        ['Age:', f"{quiz_data.answers.age} years"],
-        ['Weight:', f"{quiz_data.answers.weight} kg"],
-        ['Height:', f"{quiz_data.answers.height} cm"],
-        ['Gender:', quiz_data.answers.gender.title()],
-        ['Activity Level:', quiz_data.answers.activity_level.replace('_', ' ').title()],
-        ['Goal:', quiz_data.answers.goal.replace('_', ' ').title()],
-        ['Experience:', quiz_data.answers.experience_level.title()],
+        ['Age', f"{quiz_data.answers.age} years"],
+        ['Weight', f"{quiz_data.answers.weight} kg"],
+        ['Height', f"{quiz_data.answers.height} cm"],
+        ['Gender', quiz_data.answers.gender.title()],
+        ['Goal', quiz_data.answers.goal.replace('_', ' ').title()],
+        ['Experience', quiz_data.answers.experience_level.title()],
+        ['Training Days', f"{quiz_data.answers.training_days} per week"],
+        ['Equipment', quiz_data.answers.equipment.replace('_', ' ').title()],
     ]
     profile_table = Table(profile_data, colWidths=[2*inch, 4*inch])
     profile_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F0F0F0')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F5F5F5')),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 10),
@@ -238,143 +244,196 @@ def generate_pdf(quiz_data: QuizResponse) -> io.BytesIO:
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ]))
     story.append(profile_table)
+    story.append(PageBreak())
+    
+    # === TRAINING PHILOSOPHY ===
+    story.append(Paragraph("Training Philosophy", heading_style))
+    philosophy = """Bro splits work because they allow enough recovery between muscle groups. You train each body part once per week with high volume. This approach suits most people who want to build muscle or maintain strength while managing other life demands. Recovery happens between sessions, not during them. Sleep and food determine your results more than training intensity."""
+    story.append(Paragraph(philosophy, styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph("Progressive Overload", styles['Heading3']))
+    overload = """Add weight or reps each week. If you can complete all sets with good form, increase the load by 2-5 kg next session. Track every workout. Write down weights and reps. This is the only way to know if you are progressing."""
+    story.append(Paragraph(overload, styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
+    
+    story.append(Paragraph("Rest Between Sets", styles['Heading3']))
+    rest = """Compounds: 2-3 minutes. Isolation: 60-90 seconds. Do not rush. Full recovery between sets matters more than finishing faster."""
+    story.append(Paragraph(rest, styles['Normal']))
+    story.append(PageBreak())
+    
+    # === WEEKLY TRAINING PLAN ===
+    story.append(Paragraph("Your Weekly Training Plan", heading_style))
+    story.append(Paragraph(f"Structure: {quiz_data.training_plan}", styles['Normal']))
+    story.append(Spacer(1, 0.2*inch))
+    
+    # Bro split structure
+    if quiz_data.answers.training_days >= 6:
+        split_text = """<b>Monday: Chest</b><br/>
+Bench Press: 4 sets x 6-8 reps<br/>
+Incline Dumbbell Press: 3 sets x 8-10 reps<br/>
+Cable Flyes: 3 sets x 10-12 reps<br/>
+Dips: 3 sets x 8-12 reps<br/><br/>
+<b>Tuesday: Back</b><br/>
+Deadlift: 4 sets x 5-6 reps<br/>
+Pull-ups: 3 sets x 8-12 reps<br/>
+Barbell Rows: 3 sets x 8-10 reps<br/>
+Lat Pulldown: 3 sets x 10-12 reps<br/>
+Face Pulls: 3 sets x 15 reps<br/><br/>
+<b>Wednesday: Shoulders</b><br/>
+Overhead Press: 4 sets x 6-8 reps<br/>
+Lateral Raises: 3 sets x 12-15 reps<br/>
+Rear Delt Flyes: 3 sets x 12-15 reps<br/>
+Shrugs: 3 sets x 10-12 reps<br/><br/>
+<b>Thursday: Biceps</b><br/>
+Barbell Curls: 4 sets x 8-10 reps<br/>
+Hammer Curls: 3 sets x 10-12 reps<br/>
+Preacher Curls: 3 sets x 10-12 reps<br/><br/>
+<b>Friday: Triceps</b><br/>
+Close-Grip Bench: 4 sets x 8-10 reps<br/>
+Overhead Extension: 3 sets x 10-12 reps<br/>
+Cable Pushdown: 3 sets x 12-15 reps<br/><br/>
+<b>Saturday: Legs + Active Rest</b><br/>
+Squats: 4 sets x 6-8 reps<br/>
+Romanian Deadlift: 3 sets x 8-10 reps<br/>
+Leg Press: 3 sets x 10-12 reps<br/>
+Leg Curls: 3 sets x 10-12 reps<br/>
+Calf Raises: 4 sets x 15 reps<br/>
+Light cardio: 20 minutes walking or cycling<br/><br/>
+<b>Sunday: Rest</b>"""
+    elif quiz_data.answers.training_days == 5:
+        split_text = """<b>Day 1: Chest</b><br/>
+Bench Press: 4 sets x 6-8 reps<br/>
+Incline Press: 3 sets x 8-10 reps<br/>
+Flyes: 3 sets x 10-12 reps<br/><br/>
+<b>Day 2: Back</b><br/>
+Deadlift: 4 sets x 5-6 reps<br/>
+Rows: 3 sets x 8-10 reps<br/>
+Pulldowns: 3 sets x 10-12 reps<br/><br/>
+<b>Day 3: Rest</b><br/><br/>
+<b>Day 4: Shoulders</b><br/>
+Overhead Press: 4 sets x 6-8 reps<br/>
+Lateral Raises: 3 sets x 12-15 reps<br/>
+Rear Delts: 3 sets x 12-15 reps<br/><br/>
+<b>Day 5: Arms</b><br/>
+Barbell Curls: 3 sets x 8-10 reps<br/>
+Close-Grip Bench: 3 sets x 8-10 reps<br/>
+Hammer Curls: 3 sets x 10-12 reps<br/>
+Cable Pushdown: 3 sets x 12-15 reps<br/><br/>
+<b>Day 6: Legs</b><br/>
+Squats: 4 sets x 6-8 reps<br/>
+Romanian Deadlift: 3 sets x 8-10 reps<br/>
+Leg Press: 3 sets x 10-12 reps<br/>
+Calf Raises: 4 sets x 15 reps<br/><br/>
+<b>Days 6-7: Rest</b>"""
+    else:
+        split_text = """<b>Day 1: Upper Push/Pull</b><br/>
+Bench Press: 3 sets x 8-10 reps<br/>
+Rows: 3 sets x 8-10 reps<br/>
+Overhead Press: 3 sets x 8-10 reps<br/>
+Pull-ups: 3 sets x max reps<br/><br/>
+<b>Day 2: Lower</b><br/>
+Squats: 3 sets x 8-10 reps<br/>
+Romanian Deadlift: 3 sets x 8-10 reps<br/>
+Leg Press: 3 sets x 10-12 reps<br/><br/>
+<b>Day 3: Full Body</b><br/>
+Deadlift: 3 sets x 6-8 reps<br/>
+Bench Press: 3 sets x 8-10 reps<br/>
+Rows: 3 sets x 8-10 reps<br/>
+Curls + Extensions: 2 sets each"""
+    
+    story.append(Paragraph(split_text, styles['Normal']))
     story.append(Spacer(1, 0.3*inch))
     
-    # Nutrition Plan
-    story.append(Paragraph("NUTRITION TARGETS", heading_style))
+    # === ACTIVE REST ===
+    story.append(PageBreak())
+    story.append(Paragraph("Active Rest", heading_style))
+    rest_text = """Active rest means low-intensity movement. Walk for 20-30 minutes. Do light stretching. This improves recovery without adding fatigue. Skip it if you need full rest, but most people benefit from easy movement on off days."""
+    story.append(Paragraph(rest_text, styles['Normal']))
+    story.append(Spacer(1, 0.3*inch))
+    
+    # === NUTRITION ===
+    story.append(Paragraph("Nutrition Targets", heading_style))
+    
     macro_data = [
-        ['Daily Calories:', f"{quiz_data.calories} kcal"],
-        ['Protein:', f"{quiz_data.protein}g (Priority #1)"],
-        ['Carbohydrates:', f"{quiz_data.carbs}g"],
-        ['Fats:', f"{quiz_data.fats}g"],
+        ['Daily Calories', f"{quiz_data.calories} kcal"],
+        ['Protein', f"{quiz_data.protein} g"],
+        ['Carbohydrates', f"{quiz_data.carbs} g"],
+        ['Fats', f"{quiz_data.fats} g"],
     ]
-    macro_table = Table(macro_data, colWidths=[2.5*inch, 3.5*inch])
+    macro_table = Table(macro_data, colWidths=[2.5*inch, 2*inch])
     macro_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#E6F2FF')),
-        ('TEXTCOLOR', (0, 0), (-1, -1), colors.black),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F5F5F5')),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 11),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor('#007AFF'))
+        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
     ]))
     story.append(macro_table)
+    story.append(Spacer(1, 0.3*inch))
+    
+    nutrition_text = """Protein is the priority. Hit your protein target daily. Carbs and fats can vary based on preference and training days. Eat more carbs on training days if energy is low. Track intake for two weeks to learn portion sizes. After that, you can estimate without tracking every meal."""
+    story.append(Paragraph(nutrition_text, styles['Normal']))
     story.append(Spacer(1, 0.2*inch))
     
-    # Meal timing
-    story.append(Paragraph("Meal Timing Strategy", styles['Heading3']))
+    # Meal structure
+    story.append(Paragraph("Meal Structure", styles['Heading3']))
     if quiz_data.answers.goal == "gain_muscle":
-        meal_text = "• Eat 4-5 meals spread throughout the day<br/>• Pre-workout: Carbs + Protein 1-2 hours before<br/>• Post-workout: Protein shake within 30 minutes<br/>• Before bed: Casein protein or Greek yogurt"
+        meal_structure = """Eat 4-5 meals spread across the day. Pre-workout: carbs and protein 1-2 hours before training. Post-workout: protein within 2 hours. Evening meal should include protein and some carbs. Adjust based on hunger and schedule."""
+    elif quiz_data.answers.goal == "lose_fat":
+        meal_structure = """Eat 3-4 meals. Front-load calories earlier in the day. Keep evening meals lighter. Protein at every meal. This approach works for most people trying to lose fat without feeling restricted."""
     else:
-        meal_text = "• Eat 3-4 balanced meals per day<br/>• Front-load calories earlier in the day<br/>• Post-workout nutrition within 2 hours<br/>• Light dinner 2-3 hours before sleep"
-    story.append(Paragraph(meal_text, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # Training Plan
-    story.append(PageBreak())
-    story.append(Paragraph("TRAINING PROTOCOL", heading_style))
-    story.append(Paragraph(f"<b>Your Program:</b> {quiz_data.training_plan}", styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    # Detailed workout structure
-    if "full body" in quiz_data.training_plan.lower():
-        workout_structure = """
-        <b>FULL BODY ROUTINE (3x per week)</b><br/><br/>
-        <b>Day 1, 3, 5:</b><br/>
-        • Squat or Leg Press: 3 sets x 8-12 reps<br/>
-        • Bench Press or Push-ups: 3 sets x 8-12 reps<br/>
-        • Rows or Pull-ups: 3 sets x 8-12 reps<br/>
-        • Overhead Press: 3 sets x 8-12 reps<br/>
-        • Romanian Deadlift: 3 sets x 10-12 reps<br/>
-        • Plank: 3 sets x 30-60 seconds<br/><br/>
-        Rest 48 hours between sessions
-        """
-    elif "upper/lower" in quiz_data.training_plan.lower():
-        workout_structure = """
-        <b>UPPER/LOWER SPLIT (4x per week)</b><br/><br/>
-        <b>Upper Day 1 & 3:</b><br/>
-        • Bench Press: 4x6-8<br/>
-        • Rows: 4x8-10<br/>
-        • Overhead Press: 3x8-10<br/>
-        • Pull-ups: 3x8-12<br/>
-        • Bicep Curls: 3x10-12<br/>
-        • Tricep Extensions: 3x10-12<br/><br/>
-        <b>Lower Day 2 & 4:</b><br/>
-        • Squats: 4x6-8<br/>
-        • Romanian Deadlift: 3x8-10<br/>
-        • Leg Press: 3x10-12<br/>
-        • Leg Curls: 3x10-12<br/>
-        • Calf Raises: 4x12-15<br/>
-        • Abs: 3 sets
-        """
-    else:
-        workout_structure = """
-        <b>PUSH/PULL/LEGS SPLIT</b><br/><br/>
-        <b>Push Day:</b> Chest, Shoulders, Triceps<br/>
-        <b>Pull Day:</b> Back, Biceps<br/>
-        <b>Leg Day:</b> Quads, Hamstrings, Glutes, Calves<br/><br/>
-        4-6 exercises per session, 3-4 sets each<br/>
-        Rep ranges: 6-12 for compounds, 10-15 for isolation<br/>
-        Progressive overload: Add weight or reps weekly
-        """
-    
-    story.append(Paragraph(workout_structure, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # Recovery
-    story.append(Paragraph("Recovery Guidelines", styles['Heading3']))
-    recovery_text = "• Sleep 7-9 hours per night<br/>• Rest days: 2-3 per week<br/>• Active recovery: Light walking, stretching<br/>• Hydration: 3-4 liters water daily"
-    story.append(Paragraph(recovery_text, styles['Normal']))
+        meal_structure = """Eat 3-4 balanced meals. Prioritize protein at each meal. Distribute carbs around training. This structure supports muscle maintenance while managing body composition."""
+    story.append(Paragraph(meal_structure, styles['Normal']))
     story.append(Spacer(1, 0.3*inch))
     
     # Sample meal plan
     story.append(PageBreak())
-    story.append(Paragraph("SAMPLE MEAL PLAN", heading_style))
+    story.append(Paragraph("Sample Day of Eating", heading_style))
     
     if quiz_data.answers.dietary_preference == "vegetarian":
-        meal_plan = """
-        <b>Breakfast:</b> Oatmeal with protein powder, berries, nuts<br/>
-        <b>Snack:</b> Greek yogurt with granola<br/>
-        <b>Lunch:</b> Quinoa bowl with chickpeas, veggies, tahini<br/>
-        <b>Pre-Workout:</b> Banana with peanut butter<br/>
-        <b>Post-Workout:</b> Protein shake with spinach<br/>
-        <b>Dinner:</b> Tofu stir-fry with brown rice and vegetables<br/>
-        <b>Evening:</b> Cottage cheese with berries
-        """
-    elif quiz_data.answers.dietary_preference == "vegan":
-        meal_plan = """
-        <b>Breakfast:</b> Smoothie bowl with plant protein, chia seeds<br/>
-        <b>Snack:</b> Hummus with veggie sticks<br/>
-        <b>Lunch:</b> Lentil curry with quinoa<br/>
-        <b>Pre-Workout:</b> Rice cakes with almond butter<br/>
-        <b>Post-Workout:</b> Pea protein shake with oat milk<br/>
-        <b>Dinner:</b> Tempeh with sweet potato and broccoli<br/>
-        <b>Evening:</b> Mixed nuts and seeds
-        """
+        meals = """Breakfast: Oats with protein powder, banana, almonds<br/>
+Lunch: Lentil curry with rice, mixed vegetables<br/>
+Snack: Greek yogurt with berries<br/>
+Dinner: Paneer stir-fry with quinoa<br/>
+Evening: Cottage cheese or protein shake"""
+    elif quiz_data.answers.dietary_preference == "eggitarian":
+        meals = """Breakfast: Scrambled eggs with whole grain toast<br/>
+Lunch: Rice with dal and vegetables<br/>
+Snack: Boiled eggs and fruit<br/>
+Dinner: Egg curry with chapati<br/>
+Evening: Protein shake or yogurt"""
     else:
-        meal_plan = """
-        <b>Breakfast:</b> Eggs with whole grain toast and avocado<br/>
-        <b>Snack:</b> Protein shake with banana<br/>
-        <b>Lunch:</b> Grilled chicken breast with rice and vegetables<br/>
-        <b>Pre-Workout:</b> Oatmeal with berries<br/>
-        <b>Post-Workout:</b> Whey protein shake<br/>
-        <b>Dinner:</b> Salmon with sweet potato and asparagus<br/>
-        <b>Evening:</b> Greek yogurt or casein protein
-        """
+        meals = """Breakfast: Eggs with toast and avocado<br/>
+Lunch: Grilled chicken with rice and vegetables<br/>
+Snack: Protein shake and banana<br/>
+Dinner: Fish or lean meat with sweet potato<br/>
+Evening: Greek yogurt or casein shake"""
     
-    story.append(Paragraph(meal_plan, styles['Normal']))
+    story.append(Paragraph(meals, styles['Normal']))
     story.append(Spacer(1, 0.3*inch))
     
-    # Supplements
-    story.append(Paragraph("Recommended Supplements (Optional)", styles['Heading3']))
-    supplements = "• Whey/Plant Protein Powder<br/>• Creatine Monohydrate (5g daily)<br/>• Vitamin D3<br/>• Omega-3 Fish Oil<br/>• Multivitamin"
-    story.append(Paragraph(supplements, styles['Normal']))
+    food_tips = """Use whole foods. Cook at home when possible. Supplement protein powder if hitting targets is difficult. Track weight weekly. Adjust calories by 200-300 if progress stalls for three weeks."""
+    story.append(Paragraph(food_tips, styles['Normal']))
     story.append(Spacer(1, 0.3*inch))
     
-    # Closing
+    # === COMMON MISTAKES ===
+    story.append(PageBreak())
+    story.append(Paragraph("Common Mistakes", heading_style))
+    
+    mistakes = """<b>Changing programs too often.</b> Stick with this structure for 12 weeks minimum. Program hopping prevents progress tracking.<br/><br/>
+<b>Training too hard too often.</b> You do not need to feel destroyed after every session. Consistent moderate effort beats sporadic intense effort.<br/><br/>
+<b>Ignoring protein targets.</b> Protein matters more than total calories for body composition. Hit this number daily.<br/><br/>
+<b>Skipping sleep.</b> Most people need 7-8 hours. Less than this impairs recovery and increases injury risk.<br/><br/>
+<b>Expecting fast results.</b> Visible changes take 8-12 weeks. Trust the process. Track metrics weekly."""
+    story.append(Paragraph(mistakes, styles['Normal']))
     story.append(Spacer(1, 0.5*inch))
-    story.append(Paragraph("YOUR PROTOCOL STARTS NOW", title_style))
-    story.append(Paragraph("Consistency beats perfection. Track your progress weekly and adjust as needed.", styles['Normal']))
+    
+    # === CLOSING ===
+    story.append(Paragraph("Final Note", heading_style))
+    closing = """Consistency beats intensity. Follow this plan for 12 weeks without changes. Track your lifts and body weight weekly. Adjust only if progress stalls for three consecutive weeks. Most people quit because they overcomplicate the process. This system removes that problem."""
+    story.append(Paragraph(closing, styles['Normal']))
     
     doc.build(story)
     buffer.seek(0)

@@ -51,7 +51,7 @@ export const Landing = ({ onStart }) => {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="glass-morphism-strong rounded-full p-14"
+          className="glass-morphism-strong rounded-3xl p-14"
         >
           <h2 className="text-3xl font-bold mb-6 text-center gradient-text">Why This System Exists</h2>
           <p className="text-muted-foreground leading-relaxed text-center text-lg">

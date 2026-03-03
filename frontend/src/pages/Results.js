@@ -56,7 +56,7 @@ export const Results = ({ results, quizId }) => {
           <p className="text-center text-muted-foreground mb-16 leading-relaxed text-lg">This is 15% of your personalized plan</p>
 
           {/* Free Preview Section */}
-          <div className="glass-morphism-strong rounded-full p-12 mb-12 relative overflow-hidden">
+          <div className="glass-morphism-strong rounded-3xl p-12 mb-12 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full blur-[100px] opacity-10"></div>
             <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary rounded-full blur-[100px] opacity-10"></div>
 

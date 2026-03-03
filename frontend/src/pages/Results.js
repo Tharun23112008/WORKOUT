@@ -10,6 +10,8 @@ export const Results = ({ results, quizId }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentScreenshot, setPaymentScreenshot] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('pending'); // pending, uploading, success
+  const [userEmail, setUserEmail] = useState('');
+  const [emailError, setEmailError] = useState('');
 
   const handleUnlock = () => {
     setShowPaymentModal(true);
@@ -23,18 +25,46 @@ export const Results = ({ results, quizId }) => {
   };
 
   const handleSubmitPayment = async () => {
+    // Validate email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!userEmail || !emailRegex.test(userEmail)) {
+      setEmailError('Please enter a valid email address');
+      return;
+    }
+    
     if (!paymentScreenshot) {
       alert('Please upload payment screenshot');
       return;
     }
 
     setPaymentStatus('uploading');
+    setEmailError('');
     
-    // Simulate upload - in production, you'd upload to server
-    setTimeout(() => {
+    try {
+      // Submit payment proof to backend
+      const response = await fetch(`${API}/payment/submit`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          quiz_id: quizId,
+          email: userEmail,
+          screenshot_filename: paymentScreenshot.name
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to submit payment');
+      }
+      
+      const data = await response.json();
       setPaymentStatus('success');
-      alert('Payment confirmation submitted! You will receive your PDF via email within 24 hours after verification.');
-    }, 2000);
+    } catch (error) {
+      console.error('Upload error:', error);
+      alert('Upload failed. Please try again.');
+      setPaymentStatus('pending');
+    }
   };
 
   return (
@@ -226,33 +256,56 @@ export const Results = ({ results, quizId }) => {
                   <p className="text-2xl font-bold text-white">7204042383@fam</p>
                 </div>
 
-                {/* Upload Screenshot */}
+                {/* Email Input and Upload Screenshot */}
                 {paymentStatus === 'pending' && (
-                  <div className="glass-morphism rounded-3xl p-8">
-                    <p className="text-sm text-muted-foreground mb-4 text-center">After payment, upload screenshot for verification</p>
-                    <div className="flex flex-col items-center gap-4">
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileUpload}
-                        className="hidden"
-                        id="payment-screenshot"
-                      />
-                      <label
-                        htmlFor="payment-screenshot"
-                        className="glass-morphism-strong rounded-full px-8 py-4 cursor-pointer hover:glass-morphism transition-all flex items-center gap-3"
-                      >
-                        <Upload className="w-5 h-5 text-primary" />
-                        <span className="text-white">{paymentScreenshot ? paymentScreenshot.name : 'Choose Screenshot'}</span>
+                  <div className="glass-morphism rounded-3xl p-8 space-y-6">
+                    {/* Email Input */}
+                    <div>
+                      <label className="block text-sm font-semibold text-white mb-3">
+                        Your Email Address <span className="text-primary">*</span>
                       </label>
-                      {paymentScreenshot && (
-                        <Button
-                          onClick={handleSubmitPayment}
-                          className="bg-gradient-button text-white px-12 py-6 rounded-full font-semibold glow-gradient-hover transition-all duration-300 border-0"
-                        >
-                          Submit Payment Proof
-                        </Button>
+                      <input
+                        type="email"
+                        value={userEmail}
+                        onChange={(e) => setUserEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        className="w-full glass-morphism border-2 border-transparent focus:border-primary focus:ring-2 focus:ring-primary/30 h-14 text-lg px-6 rounded-full transition-all text-white placeholder:text-muted-foreground"
+                      />
+                      {emailError && (
+                        <p className="text-primary text-sm mt-2">{emailError}</p>
                       )}
+                      <p className="text-xs text-muted-foreground mt-2">
+                        We'll send your personalized PDF to this email after payment verification
+                      </p>
+                    </div>
+
+                    {/* Screenshot Upload */}
+                    <div>
+                      <p className="text-sm font-semibold text-white mb-3">Upload Payment Screenshot</p>
+                      <div className="flex flex-col items-center gap-4">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                          id="payment-screenshot"
+                        />
+                        <label
+                          htmlFor="payment-screenshot"
+                          className="w-full glass-morphism-strong rounded-full px-8 py-4 cursor-pointer hover:glass-morphism transition-all flex items-center justify-center gap-3"
+                        >
+                          <Upload className="w-5 h-5 text-primary" />
+                          <span className="text-white">{paymentScreenshot ? paymentScreenshot.name : 'Choose Screenshot'}</span>
+                        </label>
+                        {paymentScreenshot && userEmail && (
+                          <Button
+                            onClick={handleSubmitPayment}
+                            className="w-full bg-gradient-button text-white px-12 py-6 rounded-full font-semibold glow-gradient-hover transition-all duration-300 border-0"
+                          >
+                            Submit Payment Proof
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 )}
@@ -270,7 +323,8 @@ export const Results = ({ results, quizId }) => {
                       <CheckCircle2 className="w-10 h-10 text-white" />
                     </div>
                     <p className="text-xl font-bold text-white mb-2">Payment Submitted!</p>
-                    <p className="text-muted-foreground">You'll receive your PDF within 24 hours after verification</p>
+                    <p className="text-muted-foreground mb-4">Check your email: <span className="text-white font-semibold">{userEmail}</span></p>
+                    <p className="text-sm text-muted-foreground">You'll receive your personalized PDF within 24 hours after verification</p>
                   </div>
                 )}
               </div>

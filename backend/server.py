@@ -572,6 +572,89 @@ async def download_pdf(quiz_id: str):
         logger.error(f"Error generating PDF: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+class PaymentSubmission(BaseModel):
+    quiz_id: str
+    email: str
+    screenshot_filename: str
+
+@api_router.post("/payment/submit")
+async def submit_payment_proof(submission: PaymentSubmission):
+    """Store payment submission with email for manual verification"""
+    try:
+        # Store payment submission
+        payment_doc = {
+            "id": str(uuid.uuid4()),
+            "quiz_id": submission.quiz_id,
+            "email": submission.email,
+            "screenshot_filename": submission.screenshot_filename,
+            "status": "pending_verification",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "payment_method": "fampay_upi"
+        }
+        
+        await db.payment_submissions.insert_one(payment_doc)
+        
+        return {
+            "success": True,
+            "message": "Payment proof submitted. You'll receive your PDF within 24 hours.",
+            "email": submission.email
+        }
+    except Exception as e:
+        logger.error(f"Error submitting payment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.get("/admin/payments/pending")
+async def get_pending_payments():
+    """Get all pending payment verifications"""
+    try:
+        payments = await db.payment_submissions.find(
+            {"status": "pending_verification"},
+            {"_id": 0}
+        ).to_list(100)
+        return {"payments": payments}
+    except Exception as e:
+        logger.error(f"Error fetching pending payments: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@api_router.post("/admin/payment/verify/{submission_id}")
+async def verify_payment_and_send_pdf(submission_id: str):
+    """Admin endpoint to verify payment and send PDF"""
+    try:
+        # Get payment submission
+        submission = await db.payment_submissions.find_one({"id": submission_id}, {"_id": 0})
+        if not submission:
+            raise HTTPException(status_code=404, detail="Submission not found")
+        
+        # Get quiz data
+        quiz_doc = await db.quiz_responses.find_one({"id": submission["quiz_id"]}, {"_id": 0})
+        if not quiz_doc:
+            raise HTTPException(status_code=404, detail="Quiz data not found")
+        
+        # Convert timestamp back to datetime
+        if isinstance(quiz_doc['timestamp'], str):
+            quiz_doc['timestamp'] = datetime.fromisoformat(quiz_doc['timestamp'])
+        
+        quiz_data = QuizResponse(**quiz_doc)
+        
+        # Generate personalized PDF
+        pdf_buffer = generate_pdf(quiz_data)
+        
+        # Mark as verified
+        await db.payment_submissions.update_one(
+            {"id": submission_id},
+            {"$set": {"status": "verified", "verified_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        
+        return {
+            "success": True,
+            "message": f"Payment verified. PDF generated for {submission['email']}",
+            "email": submission["email"]
+        }
+    except Exception as e:
+        logger.error(f"Error verifying payment: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @api_router.get("/")
 async def root():
     return {"message": "PROTOCOL API Ready"}

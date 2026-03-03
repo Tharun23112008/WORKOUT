@@ -20,10 +20,6 @@ export const Landing = ({ onStart }) => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
           >
-            <div className="inline-block glass-morphism rounded-full px-6 py-2 mb-8">
-              <p className="text-sm font-semibold gradient-text">COMING SOON</p>
-            </div>
-            
             <h1 className="text-6xl sm:text-7xl lg:text-8xl font-bold tracking-tight leading-tight mb-6">
               365 Days of<br/>
               <span className="gradient-text">Discipline</span>

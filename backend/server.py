@@ -17,22 +17,22 @@ from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 import io
 
-# Load environment
+# ================== LOAD ENV ==================
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB
+# ================== MONGO ==================
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# FastAPI
+# ================== FASTAPI ==================
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
-
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-# ===== MODELS =====
+# ================== MODELS ==================
 class QuizAnswers(BaseModel):
     age: int
     weight: float
@@ -67,7 +67,7 @@ class CalculationResult(BaseModel):
     bmr: int
     tdee: int
 
-# ===== CALCULATION LOGIC =====
+# ================== CALCULATION LOGIC ==================
 def calculate_bmr(weight: float, height: int, age: int, gender: str) -> int:
     if gender.lower() == "male":
         return int(10 * weight + 6.25 * height - 5 * age + 5)
@@ -80,37 +80,6 @@ def calculate_tdee(bmr: int, training_days: int) -> int:
     else: multiplier = 1.9
     return int(bmr * multiplier)
 
-def calculate_macros(answers: QuizAnswers) -> CalculationResult:
-    bmr = calculate_bmr(answers.weight, answers.height, answers.age, answers.gender)
-    tdee = calculate_tdee(bmr, answers.training_days)
-    
-    goal_adjustments = {"lose_fat": -500, "gain_muscle": 300, "recomposition": -200}
-    calories = tdee + goal_adjustments.get(answers.goal, 0)
-    
-    protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
-    protein = answers.weight * protein_per_kg
-    
-    if answers.dietary_preference == "vegetarian":
-        protein *= 0.95
-    
-    protein = int(protein)
-    
-    fats = int((calories * 0.25) / 9)
-    carbs = int((calories - (protein * 4) - (fats * 9)) / 4)
-    
-    training_plan = get_training_plan(answers.training_days, answers.experience_level)
-    
-    return CalculationResult(
-        quiz_id="",
-        calories=calories,
-        protein=protein,
-        carbs=carbs,
-        fats=fats,
-        training_plan=training_plan,
-        bmr=bmr,
-        tdee=tdee
-    )
-
 def get_training_plan(training_days: int, experience: str) -> str:
     if training_days >= 6:
         return "6-day Bro Split: Chest, Back, Shoulders, Biceps, Triceps, Legs + Active Rest"
@@ -121,74 +90,44 @@ def get_training_plan(training_days: int, experience: str) -> str:
     else:
         return "3-day Full Body: Upper Push/Pull, Lower, Full Body"
 
-# ===== PDF GENERATION =====
-def generate_pdf(quiz_data: QuizResponse) -> io.BytesIO:
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.75*inch, bottomMargin=0.75*inch)
-    story = []
-    styles = getSampleStyleSheet()
+def calculate_macros(answers: QuizAnswers) -> CalculationResult:
+    bmr = calculate_bmr(answers.weight, answers.height, answers.age, answers.gender)
+    tdee = calculate_tdee(bmr, answers.training_days)
     
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=22, textColor=colors.black,
-                                 spaceAfter=12, alignment=TA_CENTER, fontName='Helvetica-Bold')
-    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#444444'),
-                                    spaceAfter=24, alignment=TA_CENTER, fontName='Helvetica')
+    goal_adjustments = {"lose_fat": -500, "gain_muscle": 300, "recomposition": -200}
+    calories = tdee + goal_adjustments.get(answers.goal, 0)
     
-    # Cover Page
-    story.append(Spacer(1, 2*inch))
-    story.append(Paragraph("365 Days of Discipline", title_style))
-    story.append(Paragraph("A Training and Nutrition Plan", subtitle_style))
-    story.append(PageBreak())
+    # Protein per kg
+    protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
+    protein = answers.weight * protein_per_kg
+    if answers.dietary_preference == "vegetarian":
+        protein *= 0.95
+    protein = int(protein)
     
-    # Profile
-    story.append(Paragraph("Your Profile", styles['Heading2']))
-    profile_data = [
-        ['Age', f"{quiz_data.answers.age} years"],
-        ['Weight', f"{quiz_data.answers.weight} kg"],
-        ['Height', f"{quiz_data.answers.height} cm"],
-        ['Gender', quiz_data.answers.gender.title()],
-        ['Goal', quiz_data.answers.goal.replace('_', ' ').title()],
-        ['Training Days', f"{quiz_data.answers.training_days} per week"],
-        ['Equipment', quiz_data.answers.equipment.replace('_', ' ').title()],
-    ]
-    table = Table(profile_data, colWidths=[2*inch, 4*inch])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F5F5F5')),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
-    ]))
-    story.append(table)
-    story.append(PageBreak())
+    fats = int((calories * 0.25) / 9)
+    carbs = int((calories - (protein * 4) - (fats * 9)) / 4)
     
-    # Nutrition Table
-    story.append(Paragraph("Nutrition Targets", styles['Heading2']))
-    macro_data = [
-        ['Daily Calories', f"{quiz_data.calories} kcal"],
-        ['Protein', f"{quiz_data.protein} g"],
-        ['Carbohydrates', f"{quiz_data.carbs} g"],
-        ['Fats', f"{quiz_data.fats} g"],
-    ]
-    macro_table = Table(macro_data, colWidths=[2.5*inch, 2*inch])
-    macro_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F5F5F5')),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
-    ]))
-    story.append(macro_table)
+    training_plan = get_training_plan(answers.training_days, answers.experience_level)
     
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
+    return CalculationResult(
+        quiz_id="",
+        calories=int(calories),
+        protein=protein,
+        carbs=carbs,
+        fats=fats,
+        training_plan=training_plan,
+        bmr=bmr,
+        tdee=tdee
+    )
 
-# ===== ROUTES =====
+# ================== ROUTES ==================
 @api_router.post("/quiz/submit")
 async def submit_quiz(answers: QuizAnswers, paid: bool = False):
     try:
         # Calculate macros
         result = calculate_macros(answers)
 
-        # Prepare quiz data for DB
+        # Save full data to DB
         quiz_data = QuizResponse(
             answers=answers,
             calories=result.calories,
@@ -201,36 +140,33 @@ async def submit_quiz(answers: QuizAnswers, paid: bool = False):
         doc['timestamp'] = doc['timestamp'].isoformat()
         await db.quiz_responses.insert_one(doc)
 
-        # Free users only get calories & protein
-        if not paid:
-            return {
-                "quiz_id": quiz_data.id,
-                "calories": result.calories,
-                "protein": result.protein
-            }
-
-        # Paid users get full data
-        return {
+        # Return only what free users can see
+        response = {
             "quiz_id": quiz_data.id,
             "calories": result.calories,
-            "protein": result.protein,
-            "carbs": result.carbs,
-            "fats": result.fats,
-            "training_plan": result.training_plan,
-            "bmr": result.bmr,
-            "tdee": result.tdee
+            "protein": result.protein
         }
+
+        if paid:
+            response.update({
+                "carbs": result.carbs,
+                "fats": result.fats,
+                "training_plan": result.training_plan,
+                "bmr": result.bmr,
+                "tdee": result.tdee
+            })
+
+        return response
 
     except Exception as e:
         logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-# Basic root
 @api_router.get("/")
 async def root():
     return {"message": "PROTOCOL API Ready"}
 
-# Register router & CORS
+# ================== REGISTER ROUTER & CORS ==================
 app.include_router(api_router)
 app.add_middleware(
     CORSMiddleware,
@@ -239,7 +175,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

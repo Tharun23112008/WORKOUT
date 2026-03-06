@@ -4,7 +4,9 @@ import { CheckCircle2, Download } from "lucide-react";
 import { Button } from "../components/ui/button";
 import axios from "axios";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL =
+  process.env.REACT_APP_BACKEND_URL || "https://YOUR-RENDER-BACKEND-URL.onrender.com";
+
 const API = `${BACKEND_URL}/api`;
 
 export const Success = () => {
@@ -25,9 +27,7 @@ export const Success = () => {
 
     const checkPaymentStatus = async () => {
       try {
-        const response = await axios.get(
-          `${API}/checkout/status/${sessionId}`
-        );
+        const response = await axios.get(`${API}/checkout/status/${sessionId}`);
 
         if (response.data.payment_status === "paid") {
           setStatus("success");
@@ -48,8 +48,8 @@ export const Success = () => {
         }
 
         setTimeout(checkPaymentStatus, 2000);
-      } catch (err) {
-        console.error("Error checking payment:", err);
+      } catch (error) {
+        console.error("Payment status error:", error);
         setStatus("error");
       }
     };
@@ -58,6 +58,7 @@ export const Success = () => {
   }, []);
 
   const handleDownload = () => {
+    if (!quizId) return;
     window.open(`${API}/pdf/download/${quizId}`, "_blank");
   };
 
@@ -84,17 +85,54 @@ export const Success = () => {
             <CheckCircle2 className="w-14 h-14 text-white" strokeWidth={2} />
           </div>
 
-          <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight mb-4">
+          <h1 className="text-5xl sm:text-6xl font-bold mb-4">
             <span className="gradient-text">Payment Successful</span>
           </h1>
 
-          <p className="text-xl text-muted-foreground mb-12 leading-relaxed">
+          <p className="text-xl text-muted-foreground mb-12">
             Your personalized 365 Days of Discipline blueprint is ready.
           </p>
 
           <Button
-            data-testid="download-pdf-btn"
             onClick={handleDownload}
+            size="lg"
+            className="bg-gradient-button text-white text-lg px-14 py-8 rounded-full"
+          >
+            <Download className="w-6 h-6 mr-2" />
+            Download Your PDF
+          </Button>
+
+          <div className="mt-16 glass-morphism-strong rounded-full p-10">
+            <p className="text-sm text-muted-foreground mb-3">Remember:</p>
+            <p className="font-semibold text-lg text-white">
+              Consistency beats perfection. Follow this plan for 8–12 weeks.
+            </p>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-6">
+      <div className="max-w-md text-center">
+        <h1 className="text-3xl font-bold mb-4">
+          Payment {status === "timeout" ? "Timeout" : "Failed"}
+        </h1>
+
+        <p className="text-muted-foreground mb-6">
+          {status === "timeout"
+            ? "Payment verification timed out. Please check your email."
+            : "Payment was not successful. Please try again."}
+        </p>
+
+        <Button onClick={() => (window.location.href = "/")} variant="outline">
+          Return Home
+        </Button>
+      </div>
+    </div>
+  );
+};
             size="lg"
             className="bg-gradient-button text-white text-lg px-14 py-8 rounded-full font-semibold glow-gradient-hover transition-all duration-300 transform hover:scale-105 border-0"
           >

@@ -8,7 +8,7 @@ import axios from "axios";
 const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL || "https://workout-cwle.onrender.com";
 
-const API = `${BACKEND_URL}/api`;
+const API = `${https://workout-cwle.onrender.com}/api`;
 
 const QUESTIONS = [
   {

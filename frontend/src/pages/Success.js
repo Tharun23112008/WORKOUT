@@ -6,7 +6,7 @@ import axios from "axios";
 
 const BACKEND_URL =
   process.env.REACT_APP_BACKEND_URL ||
-  "https://YOUR-RENDER-BACKEND-URL.onrender.com";
+  "https://workout-cwle.onrender.com";
 
 const API = `${BACKEND_URL}/api`;
 

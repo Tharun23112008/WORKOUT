@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { CheckCircle2, Download } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -12,19 +12,9 @@ export const Success = () => {
   const [quizId, setQuizId] = useState(null);
   const [sessionId, setSessionId] = useState(null);
 
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const session = urlParams.get('session_id');
-    
-    if (session) {
-      setSessionId(session);
-      checkPaymentStatus(session);
-    }
-  }, []);
-
-  const checkPaymentStatus = async (sessionId, attempts = 0) => {
+  const checkPaymentStatus = useCallback(async (sessionId, attempts = 0) => {
     const maxAttempts = 5;
-    
+
     if (attempts >= maxAttempts) {
       setStatus('timeout');
       return;
@@ -32,7 +22,7 @@ export const Success = () => {
 
     try {
       const response = await axios.get(`${API}/checkout/status/${sessionId}`);
-      
+
       if (response.data.payment_status === 'paid') {
         setStatus('success');
         setQuizId(response.data.metadata.quiz_id);
@@ -45,7 +35,17 @@ export const Success = () => {
       console.error('Error checking status:', err);
       setStatus('error');
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const session = urlParams.get('session_id');
+
+    if (session) {
+      setSessionId(session);
+      checkPaymentStatus(session);
+    }
+  }, [checkPaymentStatus]);
 
   const handleDownload = () => {
     window.open(`${API}/pdf/download/${quizId}`, '_blank');
@@ -73,13 +73,15 @@ export const Success = () => {
           <div className="bg-gradient-main w-24 h-24 rounded-full flex items-center justify-center mx-auto mb-8 glow-gradient">
             <CheckCircle2 className="w-14 h-14 text-white" strokeWidth={2} />
           </div>
+
           <h1 className="text-5xl sm:text-6xl font-bold tracking-tight leading-tight mb-4">
             <span className="gradient-text">Payment Successful</span>
           </h1>
+
           <p className="text-xl text-muted-foreground mb-12 leading-relaxed">
             Your personalized 365 Days of Discipline blueprint is ready.
           </p>
-          
+
           <Button
             data-testid="download-pdf-btn"
             onClick={handleDownload}
@@ -91,8 +93,13 @@ export const Success = () => {
           </Button>
 
           <div className="mt-16 glass-morphism-strong rounded-full p-10">
-            <p className="text-sm text-muted-foreground mb-3 leading-relaxed">Remember:</p>
-            <p className="font-semibold leading-relaxed text-lg text-white">Consistency beats perfection. Follow this plan for at least 8-12 weeks.</p>
+            <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+              Remember:
+            </p>
+            <p className="font-semibold leading-relaxed text-lg text-white">
+              Consistency beats perfection. Follow this plan for at least 8-12
+              weeks.
+            </p>
           </div>
         </motion.div>
       </div>
@@ -102,14 +109,18 @@ export const Success = () => {
   return (
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-md text-center">
-        <h1 className="text-3xl font-bold mb-4">Payment {status === 'timeout' ? 'Timeout' : 'Failed'}</h1>
+        <h1 className="text-3xl font-bold mb-4">
+          Payment {status === 'timeout' ? 'Timeout' : 'Failed'}
+        </h1>
+
         <p className="text-muted-foreground mb-6">
-          {status === 'timeout' 
+          {status === 'timeout'
             ? 'Payment verification timed out. Please check your email or contact support.'
             : 'Payment was not successful. Please try again.'}
         </p>
+
         <Button
-          onClick={() => window.location.href = '/'}
+          onClick={() => (window.location.href = '/')}
           variant="outline"
         >
           Return Home

@@ -13,7 +13,6 @@ export const Success = () => {
   const [status, setStatus] = useState("checking");
   const [quizId, setQuizId] = useState(null);
 
- // eslint-disable-next-line react-hooks/exhaustive-deps
 // eslint-disable-next-line react-hooks/exhaustive-deps
 useEffect(() => {
   const urlParams = new URLSearchParams(window.location.search);

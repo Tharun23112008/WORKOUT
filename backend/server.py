@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Request
+from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -17,7 +17,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER
 import io
-from fastapi.responses import StreamingResponse
 
 # Load env
 ROOT_DIR = Path(__file__).parent
@@ -72,21 +71,6 @@ class CalculationResult(BaseModel):
     bmr: int
     tdee: int
 
-class CheckoutRequest(BaseModel):
-    quiz_id: str
-    origin_url: str
-
-class PaymentTransaction(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    session_id: str
-    quiz_id: str
-    amount: float
-    currency: str
-    payment_status: str
-    metadata: Dict
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
 # ===== CALCULATION LOGIC =====
 def calculate_bmr(weight: float, height: int, age: int, gender: str) -> int:
     if gender.lower() == "male":
@@ -107,13 +91,10 @@ def calculate_macros(answers: QuizAnswers) -> CalculationResult:
     goal_adjustments = {"lose_fat": -500, "gain_muscle": 300, "recomposition": -200}
     calories = tdee + goal_adjustments.get(answers.goal, 0)
     
-    # Protein per kg
     protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
     protein = answers.weight * protein_per_kg
-    
     if answers.dietary_preference == "vegetarian":
         protein *= 0.95
-    
     protein = int(protein)
     
     fats = int((calories * 0.25) / 9)
@@ -141,66 +122,6 @@ def get_training_plan(training_days: int, experience: str) -> str:
         return "4-day Modified Split: Chest+Biceps, Back+Triceps, Shoulders, Legs"
     else:
         return "3-day Full Body: Upper Push/Pull, Lower, Full Body"
-
-# ===== PDF GENERATION =====
-def generate_pdf(quiz_data: QuizResponse) -> io.BytesIO:
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.75*inch, bottomMargin=0.75*inch)
-    story = []
-    styles = getSampleStyleSheet()
-    
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=22, textColor=colors.black,
-                                 spaceAfter=12, alignment=TA_CENTER, fontName='Helvetica-Bold')
-    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#444444'),
-                                    spaceAfter=24, alignment=TA_CENTER, fontName='Helvetica')
-    
-    # Cover Page
-    story.append(Spacer(1, 2*inch))
-    story.append(Paragraph("365 Days of Discipline", title_style))
-    story.append(Paragraph("A Training and Nutrition Plan", subtitle_style))
-    story.append(PageBreak())
-    
-    # Profile
-    story.append(Paragraph("Your Profile", styles['Heading2']))
-    profile_data = [
-        ['Age', f"{quiz_data.answers.age} years"],
-        ['Weight', f"{quiz_data.answers.weight} kg"],
-        ['Height', f"{quiz_data.answers.height} cm"],
-        ['Gender', quiz_data.answers.gender.title()],
-        ['Goal', quiz_data.answers.goal.replace('_', ' ').title()],
-        ['Training Days', f"{quiz_data.answers.training_days} per week"],
-        ['Equipment', quiz_data.answers.equipment.replace('_', ' ').title()],
-    ]
-    table = Table(profile_data, colWidths=[2*inch, 4*inch])
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F5F5F5')),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
-    ]))
-    story.append(table)
-    story.append(PageBreak())
-    
-    # Nutrition Table
-    story.append(Paragraph("Nutrition Targets", styles['Heading2']))
-    macro_data = [
-        ['Daily Calories', f"{quiz_data.calories} kcal"],
-        ['Protein', f"{quiz_data.protein} g"],
-        ['Carbohydrates', f"{quiz_data.carbs} g"],
-        ['Fats', f"{quiz_data.fats} g"],
-    ]
-    macro_table = Table(macro_data, colWidths=[2.5*inch, 2*inch])
-    macro_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F5F5F5')),
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-        ('GRID', (0, 0), (-1, -1), 1, colors.grey)
-    ]))
-    story.append(macro_table)
-    
-    doc.build(story)
-    buffer.seek(0)
-    return buffer
 
 # ===== ROUTES =====
 @api_router.post("/quiz/submit")
@@ -230,6 +151,20 @@ async def submit_quiz(answers: QuizAnswers):
         logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# ===== FREE PREVIEW ROUTE =====
+@api_router.post("/quiz/free_preview")
+async def free_preview(answers: QuizAnswers):
+    """Return only calories and protein for free users."""
+    try:
+        result = calculate_macros(answers)
+        return {
+            "calories": result.calories,
+            "protein": result.protein
+        }
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Basic root
 @api_router.get("/")
 async def root():
@@ -249,7 +184,3 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(level
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
-
-
-# REGISTER ROUTER
-app.include_router(api_router)

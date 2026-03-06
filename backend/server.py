@@ -730,9 +730,19 @@ app.add_middleware(
 
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+
+# Stripe webhook endpoint
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    return {"status": "received"}
+
+
+# REGISTER ROUTER
+app.include_router(api_router)

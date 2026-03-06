@@ -14,33 +14,50 @@ export const Success = () => {
   const [quizId, setQuizId] = useState(null);
 
  // eslint-disable-next-line react-hooks/exhaustive-deps
+// eslint-disable-next-line react-hooks/exhaustive-deps
 useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const sessionId = urlParams.get("session_id");
+  const urlParams = new URLSearchParams(window.location.search);
+  const sessionId = urlParams.get("session_id");
 
-    if (!sessionId) {
-      setStatus("failed");
-      return;
+  if (!sessionId) {
+    setStatus("failed");
+    return;
+  }
+
+  let attempts = 0;
+  const maxAttempts = 5;
+
+  const checkPaymentStatus = async () => {
+    try {
+      const response = await axios.get(`${API}/checkout/status/${sessionId}`);
+
+      if (response.data.payment_status === "paid") {
+        setStatus("success");
+        setQuizId(response.data.metadata.quiz_id);
+        return;
+      }
+
+      if (response.data.status === "expired") {
+        setStatus("failed");
+        return;
+      }
+
+      attempts++;
+
+      if (attempts >= maxAttempts) {
+        setStatus("timeout");
+        return;
+      }
+
+      setTimeout(checkPaymentStatus, 2000);
+    } catch (error) {
+      console.error("Payment status error:", error);
+      setStatus("error");
     }
+  };
 
-    let attempts = 0;
-    const maxAttempts = 5;
-
-    const checkPaymentStatus = async () => {
-      try {
-        const response = await axios.get(`${API}/checkout/status/${sessionId}`);
-
-        if (response.data.payment_status === "paid") {
-          setStatus("success");
-          setQuizId(response.data.metadata.quiz_id);
-          return;
-        }
-
-        if (response.data.status === "expired") {
-          setStatus("failed");
-          return;
-        }
-
+  checkPaymentStatus();
+}, []);
         attempts++;
 
         if (attempts >= maxAttempts) {

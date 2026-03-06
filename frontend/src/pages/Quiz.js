@@ -162,11 +162,10 @@ export const Quiz = ({ onComplete }) => {
     setError("");
 
     try {
-      const response = await axios.post(
-        `${API}/payment/submit`,
-        finalAnswers
-      );
-
+   const response = await axios.post(
+  `${API}/payment/submit`,
+  finalAnswers
+);
       onComplete(response.data, finalAnswers);
     } catch (err) {
       console.error("Error submitting quiz:", err);

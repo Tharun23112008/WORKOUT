@@ -60,4 +60,4 @@ async def checkout_status(session_id: str):
 async def download_pdf(quiz_id: str):
     return {
         "message": f"PDF for quiz {quiz_id} will be downloaded here"
-    }}
+    }

@@ -1,57 +1,67 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { CheckCircle2, Download } from 'lucide-react';
-import { Button } from '../components/ui/button';
-import axios from 'axios';
+import React, { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+import { CheckCircle2, Download } from "lucide-react";
+import { Button } from "../components/ui/button";
+import axios from "axios";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
 const API = `${BACKEND_URL}/api`;
 
 export const Success = () => {
-  const [status, setStatus] = useState('checking');
+  const [status, setStatus] = useState("checking");
   const [quizId, setQuizId] = useState(null);
-  const [sessionId, setSessionId] = useState(null);
-
-  const checkPaymentStatus = useCallback(async (sessionId, attempts = 0) => {
-    const maxAttempts = 5;
-
-    if (attempts >= maxAttempts) {
-      setStatus('timeout');
-      return;
-    }
-
-    try {
-      const response = await axios.get(`${API}/checkout/status/${sessionId}`);
-
-      if (response.data.payment_status === 'paid') {
-        setStatus('success');
-        setQuizId(response.data.metadata.quiz_id);
-      } else if (response.data.status === 'expired') {
-        setStatus('failed');
-      } else {
-        setTimeout(() => checkPaymentStatus(sessionId, attempts + 1), 2000);
-      }
-    } catch (err) {
-      console.error('Error checking status:', err);
-      setStatus('error');
-    }
-  }, []);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const session = urlParams.get('session_id');
+    const sessionId = urlParams.get("session_id");
 
-    if (session) {
-      setSessionId(session);
-      checkPaymentStatus(session);
+    if (!sessionId) {
+      setStatus("failed");
+      return;
     }
-  }, [checkPaymentStatus]);
+
+    let attempts = 0;
+    const maxAttempts = 5;
+
+    const checkPaymentStatus = async () => {
+      try {
+        const response = await axios.get(
+          `${API}/checkout/status/${sessionId}`
+        );
+
+        if (response.data.payment_status === "paid") {
+          setStatus("success");
+          setQuizId(response.data.metadata.quiz_id);
+          return;
+        }
+
+        if (response.data.status === "expired") {
+          setStatus("failed");
+          return;
+        }
+
+        attempts++;
+
+        if (attempts >= maxAttempts) {
+          setStatus("timeout");
+          return;
+        }
+
+        setTimeout(checkPaymentStatus, 2000);
+      } catch (err) {
+        console.error("Error checking payment:", err);
+        setStatus("error");
+      }
+    };
+
+    checkPaymentStatus();
+  }, []);
 
   const handleDownload = () => {
-    window.open(`${API}/pdf/download/${quizId}`, '_blank');
+    window.open(`${API}/pdf/download/${quizId}`, "_blank");
   };
 
-  if (status === 'checking') {
+  if (status === "checking") {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
@@ -62,7 +72,7 @@ export const Success = () => {
     );
   }
 
-  if (status === 'success') {
+  if (status === "success") {
     return (
       <div className="min-h-screen flex items-center justify-center px-6">
         <motion.div
@@ -97,7 +107,7 @@ export const Success = () => {
               Remember:
             </p>
             <p className="font-semibold leading-relaxed text-lg text-white">
-              Consistency beats perfection. Follow this plan for at least 8-12
+              Consistency beats perfection. Follow this plan for at least 8–12
               weeks.
             </p>
           </div>
@@ -110,19 +120,16 @@ export const Success = () => {
     <div className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-md text-center">
         <h1 className="text-3xl font-bold mb-4">
-          Payment {status === 'timeout' ? 'Timeout' : 'Failed'}
+          Payment {status === "timeout" ? "Timeout" : "Failed"}
         </h1>
 
         <p className="text-muted-foreground mb-6">
-          {status === 'timeout'
-            ? 'Payment verification timed out. Please check your email or contact support.'
-            : 'Payment was not successful. Please try again.'}
+          {status === "timeout"
+            ? "Payment verification timed out. Please check your email or contact support."
+            : "Payment was not successful. Please try again."}
         </p>
 
-        <Button
-          onClick={() => (window.location.href = '/')}
-          variant="outline"
-        >
+        <Button onClick={() => (window.location.href = "/")} variant="outline">
           Return Home
         </Button>
       </div>

@@ -19,14 +19,17 @@ def root():
 def health():
     return {"message": "Server is healthy"}
 
-# QUIZ SUBMISSION (THIS IS WHAT YOUR FRONTEND NEEDS)
-@app.post("/api/payment/submit")
+
+# QUIZ SUBMIT ENDPOINT (THIS FIXES YOUR 404)
+@app.post("/api/quiz/submit")
 def submit_quiz(data: dict):
     return {
         "quiz_id": "demo123",
         "message": "Quiz submitted successfully"
     }
 
+
+# PAYMENT STATUS
 @app.get("/api/checkout/status/{session_id}")
 def checkout_status(session_id: str):
     return {
@@ -37,6 +40,10 @@ def checkout_status(session_id: str):
         }
     }
 
+
+# PDF DOWNLOAD
 @app.get("/api/pdf/download/{quiz_id}")
 def download_pdf(quiz_id: str):
-    return {"message": f"PDF for quiz {quiz_id} will be downloaded here"}
+    return {
+        "message": f"PDF for quiz {quiz_id} will be downloaded here"
+    }

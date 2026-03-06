@@ -6,7 +6,7 @@ import os
 import logging
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
-from typing import List, Optional, Dict
+from typing import Optional, Dict
 import uuid
 from datetime import datetime, timezone
 from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionResponse, CheckoutStatusResponse, CheckoutSessionRequest
@@ -15,14 +15,15 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, Table, TableStyle
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.enums import TA_CENTER
 import io
 from fastapi.responses import StreamingResponse
 
+# Load env
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / '.env')
+load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
+# MongoDB
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
@@ -30,13 +31,13 @@ db = client[os.environ['DB_NAME']]
 # Stripe
 stripe_api_key = os.environ['STRIPE_API_KEY']
 
+# FastAPI
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
 logger = logging.getLogger(__name__)
 
-# ============= MODELS =============
-
+# ===== MODELS =====
 class QuizAnswers(BaseModel):
     age: int
     weight: float
@@ -86,68 +87,42 @@ class PaymentTransaction(BaseModel):
     metadata: Dict
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# ============= CALCULATION LOGIC =============
-
+# ===== CALCULATION LOGIC =====
 def calculate_bmr(weight: float, height: int, age: int, gender: str) -> int:
-    """Calculate Basal Metabolic Rate using Mifflin-St Jeor Equation"""
     if gender.lower() == "male":
-        bmr = 10 * weight + 6.25 * height - 5 * age + 5
-    else:
-        bmr = 10 * weight + 6.25 * height - 5 * age - 161
-    return int(bmr)
+        return int(10 * weight + 6.25 * height - 5 * age + 5)
+    return int(10 * weight + 6.25 * height - 5 * age - 161)
 
 def calculate_tdee(bmr: int, training_days: int) -> int:
-    """Calculate Total Daily Energy Expenditure based on training frequency"""
-    # Map training days to activity level
-    if training_days <= 2:
-        multiplier = 1.375  # Light
-    elif training_days <= 4:
-        multiplier = 1.55   # Moderate
-    elif training_days <= 5:
-        multiplier = 1.725  # Active
-    else:
-        multiplier = 1.9    # Very active
+    if training_days <= 2: multiplier = 1.375
+    elif training_days <= 4: multiplier = 1.55
+    elif training_days <= 5: multiplier = 1.725
+    else: multiplier = 1.9
     return int(bmr * multiplier)
 
 def calculate_macros(answers: QuizAnswers) -> CalculationResult:
-    """Calculate personalized nutrition and training"""
     bmr = calculate_bmr(answers.weight, answers.height, answers.age, answers.gender)
     tdee = calculate_tdee(bmr, answers.training_days)
     
-    # Adjust calories based on goal
-    goal_adjustments = {
-        "lose_fat": -500,
-        "gain_muscle": 300,
-        "recomposition": -200
-    }
-    
+    goal_adjustments = {"lose_fat": -500, "gain_muscle": 300, "recomposition": -200}
     calories = tdee + goal_adjustments.get(answers.goal, 0)
     
-    # Protein calculation based on goal
-    if answers.goal == "gain_muscle":
-        protein_per_kg = 2.0
-    elif answers.goal == "lose_fat":
-        protein_per_kg = 2.2
-    else:  # recomposition
-        protein_per_kg = 2.0
+    # Protein per kg
+    protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
+    protein = answers.weight * protein_per_kg
     
-    protein = int(answers.weight * protein_per_kg)
-    
-    # Adjust slightly for vegetarians
     if answers.dietary_preference == "vegetarian":
-        protein = int(protein * 0.95)
+        protein *= 0.95
     
-    # Fats: 25% of total calories
+    protein = int(protein)
+    
     fats = int((calories * 0.25) / 9)
-    
-    # Carbs: remaining calories
     carbs = int((calories - (protein * 4) - (fats * 9)) / 4)
     
-    # Training plan - bro split with modifications
     training_plan = get_training_plan(answers.training_days, answers.experience_level)
     
     return CalculationResult(
-        quiz_id="",  # Will be set in route
+        quiz_id="",
         calories=calories,
         protein=protein,
         carbs=carbs,
@@ -158,7 +133,6 @@ def calculate_macros(answers: QuizAnswers) -> CalculationResult:
     )
 
 def get_training_plan(training_days: int, experience: str) -> str:
-    """Generate training plan structure - based on bro split"""
     if training_days >= 6:
         return "6-day Bro Split: Chest, Back, Shoulders, Biceps, Triceps, Legs + Active Rest"
     elif training_days == 5:
@@ -168,193 +142,47 @@ def get_training_plan(training_days: int, experience: str) -> str:
     else:
         return "3-day Full Body: Upper Push/Pull, Lower, Full Body"
 
-# ============= PDF GENERATION =============
-
+# ===== PDF GENERATION =====
 def generate_pdf(quiz_data: QuizResponse) -> io.BytesIO:
-    """Generate personalized PDF report - 365 Days of Discipline"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.75*inch, bottomMargin=0.75*inch)
     story = []
     styles = getSampleStyleSheet()
     
-    # Minimal, clean styles
-    title_style = ParagraphStyle(
-        'Title',
-        parent=styles['Heading1'],
-        fontSize=22,
-        textColor=colors.black,
-        spaceAfter=12,
-        alignment=TA_CENTER,
-        fontName='Helvetica-Bold'
-    )
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=22, textColor=colors.black,
+                                 spaceAfter=12, alignment=TA_CENTER, fontName='Helvetica-Bold')
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=11, textColor=colors.HexColor('#444444'),
+                                    spaceAfter=24, alignment=TA_CENTER, fontName='Helvetica')
     
-    subtitle_style = ParagraphStyle(
-        'Subtitle',
-        parent=styles['Normal'],
-        fontSize=11,
-        textColor=colors.HexColor('#444444'),
-        spaceAfter=24,
-        alignment=TA_CENTER,
-        fontName='Helvetica'
-    )
-    
-    heading_style = ParagraphStyle(
-        'Heading',
-        parent=styles['Heading2'],
-        fontSize=14,
-        textColor=colors.black,
-        spaceAfter=12,
-        spaceBefore=20,
-        fontName='Helvetica-Bold'
-    )
-    
-    # === COVER PAGE ===
+    # Cover Page
     story.append(Spacer(1, 2*inch))
     story.append(Paragraph("365 Days of Discipline", title_style))
     story.append(Paragraph("A Training and Nutrition Plan", subtitle_style))
-    story.append(Spacer(1, 0.3*inch))
-    story.append(Paragraph("Based on one year of consistent training.", styles['Normal']))
     story.append(PageBreak())
     
-    # === INTRODUCTION ===
-    story.append(Paragraph("Introduction", heading_style))
-    intro_text = """I followed a bro split for 365 days. No missed sessions. No program changes. This document gives you the same structure with adjustments based on your inputs. The system works because it removes decisions. You show up, follow the plan, and track progress weekly. Nothing else matters for the first 12 weeks."""
-    story.append(Paragraph(intro_text, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # === PERSONAL DATA ===
-    story.append(Paragraph("Your Profile", heading_style))
+    # Profile
+    story.append(Paragraph("Your Profile", styles['Heading2']))
     profile_data = [
         ['Age', f"{quiz_data.answers.age} years"],
         ['Weight', f"{quiz_data.answers.weight} kg"],
         ['Height', f"{quiz_data.answers.height} cm"],
         ['Gender', quiz_data.answers.gender.title()],
         ['Goal', quiz_data.answers.goal.replace('_', ' ').title()],
-        ['Experience', quiz_data.answers.experience_level.title()],
         ['Training Days', f"{quiz_data.answers.training_days} per week"],
         ['Equipment', quiz_data.answers.equipment.replace('_', ' ').title()],
     ]
-    profile_table = Table(profile_data, colWidths=[2*inch, 4*inch])
-    profile_table.setStyle(TableStyle([
+    table = Table(profile_data, colWidths=[2*inch, 4*inch])
+    table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F5F5F5')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
     ]))
-    story.append(profile_table)
+    story.append(table)
     story.append(PageBreak())
     
-    # === TRAINING PHILOSOPHY ===
-    story.append(Paragraph("Training Philosophy", heading_style))
-    philosophy = """Bro splits work because they allow enough recovery between muscle groups. You train each body part once per week with high volume. This approach suits most people who want to build muscle or maintain strength while managing other life demands. Recovery happens between sessions, not during them. Sleep and food determine your results more than training intensity."""
-    story.append(Paragraph(philosophy, styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    story.append(Paragraph("Progressive Overload", styles['Heading3']))
-    overload = """Add weight or reps each week. If you can complete all sets with good form, increase the load by 2-5 kg next session. Track every workout. Write down weights and reps. This is the only way to know if you are progressing."""
-    story.append(Paragraph(overload, styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    story.append(Paragraph("Rest Between Sets", styles['Heading3']))
-    rest = """Compounds: 2-3 minutes. Isolation: 60-90 seconds. Do not rush. Full recovery between sets matters more than finishing faster."""
-    story.append(Paragraph(rest, styles['Normal']))
-    story.append(PageBreak())
-    
-    # === WEEKLY TRAINING PLAN ===
-    story.append(Paragraph("Your Weekly Training Plan", heading_style))
-    story.append(Paragraph(f"Structure: {quiz_data.training_plan}", styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    # Bro split structure
-    if quiz_data.answers.training_days >= 6:
-        split_text = """<b>Monday: Chest</b><br/>
-Bench Press: 4 sets x 6-8 reps<br/>
-Incline Dumbbell Press: 3 sets x 8-10 reps<br/>
-Cable Flyes: 3 sets x 10-12 reps<br/>
-Dips: 3 sets x 8-12 reps<br/><br/>
-<b>Tuesday: Back</b><br/>
-Deadlift: 4 sets x 5-6 reps<br/>
-Pull-ups: 3 sets x 8-12 reps<br/>
-Barbell Rows: 3 sets x 8-10 reps<br/>
-Lat Pulldown: 3 sets x 10-12 reps<br/>
-Face Pulls: 3 sets x 15 reps<br/><br/>
-<b>Wednesday: Shoulders</b><br/>
-Overhead Press: 4 sets x 6-8 reps<br/>
-Lateral Raises: 3 sets x 12-15 reps<br/>
-Rear Delt Flyes: 3 sets x 12-15 reps<br/>
-Shrugs: 3 sets x 10-12 reps<br/><br/>
-<b>Thursday: Biceps</b><br/>
-Barbell Curls: 4 sets x 8-10 reps<br/>
-Hammer Curls: 3 sets x 10-12 reps<br/>
-Preacher Curls: 3 sets x 10-12 reps<br/><br/>
-<b>Friday: Triceps</b><br/>
-Close-Grip Bench: 4 sets x 8-10 reps<br/>
-Overhead Extension: 3 sets x 10-12 reps<br/>
-Cable Pushdown: 3 sets x 12-15 reps<br/><br/>
-<b>Saturday: Legs + Active Rest</b><br/>
-Squats: 4 sets x 6-8 reps<br/>
-Romanian Deadlift: 3 sets x 8-10 reps<br/>
-Leg Press: 3 sets x 10-12 reps<br/>
-Leg Curls: 3 sets x 10-12 reps<br/>
-Calf Raises: 4 sets x 15 reps<br/>
-Light cardio: 20 minutes walking or cycling<br/><br/>
-<b>Sunday: Rest</b>"""
-    elif quiz_data.answers.training_days == 5:
-        split_text = """<b>Day 1: Chest</b><br/>
-Bench Press: 4 sets x 6-8 reps<br/>
-Incline Press: 3 sets x 8-10 reps<br/>
-Flyes: 3 sets x 10-12 reps<br/><br/>
-<b>Day 2: Back</b><br/>
-Deadlift: 4 sets x 5-6 reps<br/>
-Rows: 3 sets x 8-10 reps<br/>
-Pulldowns: 3 sets x 10-12 reps<br/><br/>
-<b>Day 3: Rest</b><br/><br/>
-<b>Day 4: Shoulders</b><br/>
-Overhead Press: 4 sets x 6-8 reps<br/>
-Lateral Raises: 3 sets x 12-15 reps<br/>
-Rear Delts: 3 sets x 12-15 reps<br/><br/>
-<b>Day 5: Arms</b><br/>
-Barbell Curls: 3 sets x 8-10 reps<br/>
-Close-Grip Bench: 3 sets x 8-10 reps<br/>
-Hammer Curls: 3 sets x 10-12 reps<br/>
-Cable Pushdown: 3 sets x 12-15 reps<br/><br/>
-<b>Day 6: Legs</b><br/>
-Squats: 4 sets x 6-8 reps<br/>
-Romanian Deadlift: 3 sets x 8-10 reps<br/>
-Leg Press: 3 sets x 10-12 reps<br/>
-Calf Raises: 4 sets x 15 reps<br/><br/>
-<b>Days 6-7: Rest</b>"""
-    else:
-        split_text = """<b>Day 1: Upper Push/Pull</b><br/>
-Bench Press: 3 sets x 8-10 reps<br/>
-Rows: 3 sets x 8-10 reps<br/>
-Overhead Press: 3 sets x 8-10 reps<br/>
-Pull-ups: 3 sets x max reps<br/><br/>
-<b>Day 2: Lower</b><br/>
-Squats: 3 sets x 8-10 reps<br/>
-Romanian Deadlift: 3 sets x 8-10 reps<br/>
-Leg Press: 3 sets x 10-12 reps<br/><br/>
-<b>Day 3: Full Body</b><br/>
-Deadlift: 3 sets x 6-8 reps<br/>
-Bench Press: 3 sets x 8-10 reps<br/>
-Rows: 3 sets x 8-10 reps<br/>
-Curls + Extensions: 2 sets each"""
-    
-    story.append(Paragraph(split_text, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # === ACTIVE REST ===
-    story.append(PageBreak())
-    story.append(Paragraph("Active Rest", heading_style))
-    rest_text = """Active rest means low-intensity movement. Walk for 20-30 minutes. Do light stretching. This improves recovery without adding fatigue. Skip it if you need full rest, but most people benefit from easy movement on off days."""
-    story.append(Paragraph(rest_text, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # === NUTRITION ===
-    story.append(Paragraph("Nutrition Targets", heading_style))
-    
+    # Nutrition Table
+    story.append(Paragraph("Nutrition Targets", styles['Heading2']))
     macro_data = [
         ['Daily Calories', f"{quiz_data.calories} kcal"],
         ['Protein', f"{quiz_data.protein} g"],
@@ -364,113 +192,30 @@ Curls + Extensions: 2 sets each"""
     macro_table = Table(macro_data, colWidths=[2.5*inch, 2*inch])
     macro_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F5F5F5')),
-        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('GRID', (0, 0), (-1, -1), 1, colors.grey)
     ]))
     story.append(macro_table)
-    story.append(Spacer(1, 0.3*inch))
-    
-    nutrition_text = """Protein is the priority. Hit your protein target daily. Carbs and fats can vary based on preference and training days. Eat more carbs on training days if energy is low. Track intake for two weeks to learn portion sizes. After that, you can estimate without tracking every meal."""
-    story.append(Paragraph(nutrition_text, styles['Normal']))
-    story.append(Spacer(1, 0.2*inch))
-    
-    # Meal structure
-    story.append(Paragraph("Meal Structure", styles['Heading3']))
-    if quiz_data.answers.goal == "gain_muscle":
-        meal_structure = """Eat 4-5 meals spread across the day. Pre-workout: carbs and protein 1-2 hours before training. Post-workout: protein within 2 hours. Evening meal should include protein and some carbs. Adjust based on hunger and schedule."""
-    elif quiz_data.answers.goal == "lose_fat":
-        meal_structure = """Eat 3-4 meals. Front-load calories earlier in the day. Keep evening meals lighter. Protein at every meal. This approach works for most people trying to lose fat without feeling restricted."""
-    else:
-        meal_structure = """Eat 3-4 balanced meals. Prioritize protein at each meal. Distribute carbs around training. This structure supports muscle maintenance while managing body composition."""
-    story.append(Paragraph(meal_structure, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # Sample meal plan
-    story.append(PageBreak())
-    story.append(Paragraph("Sample Day of Eating", heading_style))
-    
-    if quiz_data.answers.dietary_preference == "vegetarian":
-        meals = """Breakfast: Oats with protein powder, banana, almonds<br/>
-Lunch: Lentil curry with rice, mixed vegetables<br/>
-Snack: Greek yogurt with berries<br/>
-Dinner: Paneer stir-fry with quinoa<br/>
-Evening: Cottage cheese or protein shake"""
-    elif quiz_data.answers.dietary_preference == "eggitarian":
-        meals = """Breakfast: Scrambled eggs with whole grain toast<br/>
-Lunch: Rice with dal and vegetables<br/>
-Snack: Boiled eggs and fruit<br/>
-Dinner: Egg curry with chapati<br/>
-Evening: Protein shake or yogurt"""
-    else:
-        meals = """Breakfast: Eggs with toast and avocado<br/>
-Lunch: Grilled chicken with rice and vegetables<br/>
-Snack: Protein shake and banana<br/>
-Dinner: Fish or lean meat with sweet potato<br/>
-Evening: Greek yogurt or casein shake"""
-    
-    story.append(Paragraph(meals, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    food_tips = """Use whole foods. Cook at home when possible. Supplement protein powder if hitting targets is difficult. Track weight weekly. Adjust calories by 200-300 if progress stalls for three weeks."""
-    story.append(Paragraph(food_tips, styles['Normal']))
-    story.append(Spacer(1, 0.3*inch))
-    
-    # === COMMON MISTAKES ===
-    story.append(PageBreak())
-    story.append(Paragraph("Common Mistakes", heading_style))
-    
-    mistakes = """<b>Changing programs too often.</b> Stick with this structure for 12 weeks minimum. Program hopping prevents progress tracking.<br/><br/>
-<b>Training too hard too often.</b> You do not need to feel destroyed after every session. Consistent moderate effort beats sporadic intense effort.<br/><br/>
-<b>Ignoring protein targets.</b> Protein matters more than total calories for body composition. Hit this number daily.<br/><br/>
-<b>Skipping sleep.</b> Most people need 7-8 hours. Less than this impairs recovery and increases injury risk.<br/><br/>
-<b>Expecting fast results.</b> Visible changes take 8-12 weeks. Trust the process. Track metrics weekly."""
-    story.append(Paragraph(mistakes, styles['Normal']))
-    story.append(Spacer(1, 0.5*inch))
-    
-    # === CLOSING ===
-    story.append(Paragraph("Final Note", heading_style))
-    closing = """Consistency beats intensity. Follow this plan for 12 weeks without changes. Track your lifts and body weight weekly. Adjust only if progress stalls for three consecutive weeks. Most people quit because they overcomplicate the process. This system removes that problem."""
-    story.append(Paragraph(closing, styles['Normal']))
     
     doc.build(story)
     buffer.seek(0)
     return buffer
 
-# ============= API ROUTES =============
-
+# ===== ROUTES =====
 @api_router.post("/quiz/submit")
 async def submit_quiz(answers: QuizAnswers):
-    """Submit quiz and get calculations"""
     try:
-        # Create quiz response first to get ID
-        quiz_data = QuizResponse(
-            answers=answers,
-            calories=0,
-            protein=0,
-            carbs=0,
-            fats=0,
-            training_plan=""
-        )
-        
-        # Calculate macros
+        quiz_data = QuizResponse(answers=answers, calories=0, protein=0, carbs=0, fats=0, training_plan="")
         result = calculate_macros(answers)
-        
-        # Update quiz data with calculations
         quiz_data.calories = result.calories
         quiz_data.protein = result.protein
         quiz_data.carbs = result.carbs
         quiz_data.fats = result.fats
         quiz_data.training_plan = result.training_plan
-        
-        # Store in database
         doc = quiz_data.model_dump()
         doc['timestamp'] = doc['timestamp'].isoformat()
         await db.quiz_responses.insert_one(doc)
-        
-        # Return with quiz_id
         return {
             "quiz_id": quiz_data.id,
             "calories": result.calories,
@@ -482,244 +227,16 @@ async def submit_quiz(answers: QuizAnswers):
             "tdee": result.tdee
         }
     except Exception as e:
-        logger.error(f"Error submitting quiz: {e}")
+        logger.error(f"Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@api_router.post("/checkout/session", response_model=CheckoutSessionResponse)
-async def create_checkout_session(request: CheckoutRequest, http_request: Request):
-    """Create Stripe checkout session"""
-    try:
-        # Fixed package pricing - NEVER from frontend (₹499 = ~$6 USD)
-        PACKAGE_PRICE = 6.00
-        
-        # Get quiz data to validate
-        quiz = await db.quiz_responses.find_one({"id": request.quiz_id}, {"_id": 0})
-        if not quiz:
-            raise HTTPException(status_code=404, detail="Quiz not found")
-        
-        # Build URLs from origin
-        success_url = f"{request.origin_url}/success?session_id={{CHECKOUT_SESSION_ID}}"
-        cancel_url = f"{request.origin_url}/results?quiz_id={request.quiz_id}"
-        
-        # Initialize Stripe
-        host_url = str(http_request.base_url)
-        webhook_url = f"{host_url}api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-        
-        # Create checkout session
-        checkout_request = CheckoutSessionRequest(
-            amount=PACKAGE_PRICE,
-            currency="usd",
-            success_url=success_url,
-            cancel_url=cancel_url,
-            metadata={
-                "quiz_id": request.quiz_id,
-                "product": "full_protocol_pdf"
-            }
-        )
-        
-        session = await stripe_checkout.create_checkout_session(checkout_request)
-        
-        # Store payment transaction
-        transaction = PaymentTransaction(
-            session_id=session.session_id,
-            quiz_id=request.quiz_id,
-            amount=PACKAGE_PRICE,
-            currency="usd",
-            payment_status="pending",
-            metadata={"quiz_id": request.quiz_id}
-        )
-        
-        doc = transaction.model_dump()
-        doc['timestamp'] = doc['timestamp'].isoformat()
-        await db.payment_transactions.insert_one(doc)
-        
-        return session
-    except Exception as e:
-        logger.error(f"Error creating checkout session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/checkout/status/{session_id}", response_model=CheckoutStatusResponse)
-async def get_checkout_status(session_id: str, http_request: Request):
-    """Get checkout session status"""
-    try:
-        host_url = str(http_request.base_url)
-        webhook_url = f"{host_url}api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-        
-        status = await stripe_checkout.get_checkout_status(session_id)
-        
-        # Update transaction in database
-        if status.payment_status == "paid":
-            # Check if already processed
-            existing = await db.payment_transactions.find_one(
-                {"session_id": session_id, "payment_status": "paid"},
-                {"_id": 0}
-            )
-            
-            if not existing:
-                await db.payment_transactions.update_one(
-                    {"session_id": session_id},
-                    {"$set": {"payment_status": "paid"}}
-                )
-        
-        return status
-    except Exception as e:
-        logger.error(f"Error getting checkout status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    """Handle Stripe webhooks"""
-    try:
-        body = await request.body()
-        signature = request.headers.get("Stripe-Signature")
-        
-        host_url = str(request.base_url)
-        webhook_url = f"{host_url}api/webhook/stripe"
-        stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
-        
-        webhook_response = await stripe_checkout.handle_webhook(body, signature)
-        
-        # Update transaction
-        if webhook_response.payment_status == "paid":
-            await db.payment_transactions.update_one(
-                {"session_id": webhook_response.session_id},
-                {"$set": {"payment_status": "paid"}}
-            )
-        
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
-
-@api_router.get("/pdf/download/{quiz_id}")
-async def download_pdf(quiz_id: str):
-    """Download personalized PDF (requires payment verification)"""
-    try:
-        # Check payment status
-        payment = await db.payment_transactions.find_one(
-            {"quiz_id": quiz_id, "payment_status": "paid"},
-            {"_id": 0}
-        )
-        
-        if not payment:
-            raise HTTPException(status_code=403, detail="Payment required")
-        
-        # Get quiz data
-        quiz_doc = await db.quiz_responses.find_one({"id": quiz_id}, {"_id": 0})
-        if not quiz_doc:
-            raise HTTPException(status_code=404, detail="Quiz not found")
-        
-        # Convert timestamp back to datetime
-        if isinstance(quiz_doc['timestamp'], str):
-            quiz_doc['timestamp'] = datetime.fromisoformat(quiz_doc['timestamp'])
-        
-        quiz_data = QuizResponse(**quiz_doc)
-        
-        # Generate PDF
-        pdf_buffer = generate_pdf(quiz_data)
-        
-        return StreamingResponse(
-            pdf_buffer,
-            media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename=protocol_{quiz_id}.pdf"}
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error generating PDF: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-class PaymentSubmission(BaseModel):
-    quiz_id: str
-    email: str
-    screenshot_filename: str
-
-@api_router.post("/payment/submit")
-async def submit_payment_proof(submission: PaymentSubmission):
-    """Store payment submission with email for manual verification"""
-    try:
-        # Store payment submission
-        payment_doc = {
-            "id": str(uuid.uuid4()),
-            "quiz_id": submission.quiz_id,
-            "email": submission.email,
-            "screenshot_filename": submission.screenshot_filename,
-            "status": "pending_verification",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "payment_method": "fampay_upi"
-        }
-        
-        await db.payment_submissions.insert_one(payment_doc)
-        
-        return {
-            "success": True,
-            "message": "Payment proof submitted. You'll receive your PDF within 24 hours.",
-            "email": submission.email
-        }
-    except Exception as e:
-        logger.error(f"Error submitting payment: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.get("/admin/payments/pending")
-async def get_pending_payments():
-    """Get all pending payment verifications"""
-    try:
-        payments = await db.payment_submissions.find(
-            {"status": "pending_verification"},
-            {"_id": 0}
-        ).to_list(100)
-        return {"payments": payments}
-    except Exception as e:
-        logger.error(f"Error fetching pending payments: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@api_router.post("/admin/payment/verify/{submission_id}")
-async def verify_payment_and_send_pdf(submission_id: str):
-    """Admin endpoint to verify payment and send PDF"""
-    try:
-        # Get payment submission
-        submission = await db.payment_submissions.find_one({"id": submission_id}, {"_id": 0})
-        if not submission:
-            raise HTTPException(status_code=404, detail="Submission not found")
-        
-        # Get quiz data
-        quiz_doc = await db.quiz_responses.find_one({"id": submission["quiz_id"]}, {"_id": 0})
-        if not quiz_doc:
-            raise HTTPException(status_code=404, detail="Quiz data not found")
-        
-        # Convert timestamp back to datetime
-        if isinstance(quiz_doc['timestamp'], str):
-            quiz_doc['timestamp'] = datetime.fromisoformat(quiz_doc['timestamp'])
-        
-        quiz_data = QuizResponse(**quiz_doc)
-        
-        # Generate personalized PDF
-        pdf_buffer = generate_pdf(quiz_data)
-        
-        # Mark as verified
-        await db.payment_submissions.update_one(
-            {"id": submission_id},
-            {"$set": {"status": "verified", "verified_at": datetime.now(timezone.utc).isoformat()}}
-        )
-        
-        return {
-            "success": True,
-            "message": f"Payment verified. PDF generated for {submission['email']}",
-            "email": submission["email"]
-        }
-    except Exception as e:
-        logger.error(f"Error verifying payment: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
+# Basic root
 @api_router.get("/")
 async def root():
     return {"message": "PROTOCOL API Ready"}
 
+# Register router & CORS
 app.include_router(api_router)
-
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -727,21 +244,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
-
-
-# Stripe webhook endpoint
-@api_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    return {"status": "received"}
 
 
 # REGISTER ROUTER

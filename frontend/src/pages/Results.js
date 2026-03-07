@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Lock, CheckCircle2, X, QrCode, Upload } from "lucide-react";
+import { X } from "lucide-react";
 import { Button } from "../components/ui/button";
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "";
@@ -20,9 +20,7 @@ export const Results = ({ results, quizId }) => {
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setPaymentScreenshot(file);
-    }
+    if (file) setPaymentScreenshot(file);
   };
 
   const validateEmail = (email) => {
@@ -32,7 +30,7 @@ export const Results = ({ results, quizId }) => {
 
   const handleSubmitPayment = async () => {
     if (!validateEmail(userEmail)) {
-      setEmailError("Please enter a valid email address");
+      setEmailError("Enter a valid email");
       return;
     }
 
@@ -41,13 +39,7 @@ export const Results = ({ results, quizId }) => {
       return;
     }
 
-    if (!quizId) {
-      alert("Quiz ID missing");
-      return;
-    }
-
     setLoading(true);
-    setPaymentStatus("uploading");
 
     try {
       const formData = new FormData();
@@ -55,21 +47,16 @@ export const Results = ({ results, quizId }) => {
       formData.append("email", userEmail);
       formData.append("screenshot", paymentScreenshot);
 
-      const response = await fetch(`${API}/payment/submit`, {
+      const res = await fetch(`${API}/payment/submit`, {
         method: "POST",
         body: formData
       });
 
-      if (!response.ok) {
-        throw new Error("Server error");
-      }
-
-      await response.json();
+      if (!res.ok) throw new Error("Server error");
 
       setPaymentStatus("success");
     } catch (err) {
-      console.error(err);
-      alert("Payment submission failed. Try again.");
+      alert("Payment submission failed");
       setPaymentStatus("pending");
     }
 
@@ -77,62 +64,98 @@ export const Results = ({ results, quizId }) => {
   };
 
   return (
-    <div className="min-h-screen py-20 px-6 relative">
+    <div className="min-h-screen py-16 px-5 bg-black text-white">
+
       <div className="max-w-4xl mx-auto">
 
-        <h1 className="text-5xl font-bold text-center mb-6">
+        <h1 className="text-3xl md:text-5xl font-bold text-center mb-10">
           Your Free Snapshot
         </h1>
 
-        <div className="grid sm:grid-cols-2 gap-6 mb-12">
-          <div className="text-center">
-            <p className="text-sm">DAILY CALORIES</p>
-            <p className="text-5xl font-bold">{results.calories}</p>
+        {/* CALORIES + PROTEIN */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mb-12">
+
+          <div className="bg-white/5 p-8 rounded-2xl text-center">
+            <p className="text-xs uppercase tracking-wider text-gray-400">
+              Daily Calories
+            </p>
+
+            <p className="text-4xl md:text-5xl font-bold mt-2">
+              {results?.calories || "..."}
+            </p>
+
+            <p className="text-sm text-gray-400 mt-2">
+              kcal per day
+            </p>
           </div>
 
-          <div className="text-center">
-            <p className="text-sm">PROTEIN TARGET</p>
-            <p className="text-5xl font-bold">{results.protein}g</p>
+          <div className="bg-white/5 p-8 rounded-2xl text-center">
+            <p className="text-xs uppercase tracking-wider text-gray-400">
+              Protein Target
+            </p>
+
+            <p className="text-4xl md:text-5xl font-bold mt-2">
+              {results?.protein || "..."}g
+            </p>
+
+            <p className="text-sm text-gray-400 mt-2">
+              per day
+            </p>
           </div>
+
         </div>
 
-        <div className="text-center mb-12">
-          <p className="text-xl">{results.training_plan}</p>
-        </div>
-
-        <div className="text-center">
-          <h2 className="text-3xl font-bold mb-6">
-            Unlock Full Plan
-          </h2>
-
-          <p className="text-lg mb-6">
-            Full 365-day workout + nutrition protocol
+        {/* TRAINING PREVIEW */}
+        <div className="bg-white/5 p-6 rounded-xl text-center mb-12">
+          <p className="text-sm text-gray-400 mb-2">
+            Your Training Structure
           </p>
 
-          <div className="mb-6 text-4xl font-bold">
-            ₹499
+          <p className="text-lg md:text-xl">
+            {results?.training_plan || "Custom training split"}
+          </p>
+        </div>
+
+        {/* PAYWALL */}
+        <div className="text-center">
+
+          <h2 className="text-2xl md:text-3xl font-bold mb-4">
+            Unlock the Full 365-Day Protocol
+          </h2>
+
+          <p className="text-gray-400 mb-6 max-w-lg mx-auto">
+            Complete workout system, nutrition plan, recovery protocols,
+            and a downloadable PDF blueprint.
+          </p>
+
+          <div className="text-3xl font-bold mb-6">
+            ₹499 one-time
           </div>
 
           <Button onClick={handleUnlock} size="lg">
-            Pay with UPI
+            Unlock Full Plan
           </Button>
+
         </div>
       </div>
 
+      {/* PAYMENT MODAL */}
       <AnimatePresence>
         {showPaymentModal && (
           <motion.div
-            className="fixed inset-0 bg-black/70 flex items-center justify-center"
+            className="fixed inset-0 bg-black/80 flex items-center justify-center p-6"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
+
             <motion.div
-              className="bg-white p-8 rounded-xl max-w-lg w-full"
+              className="bg-white text-black p-8 rounded-2xl max-w-md w-full"
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.9 }}
             >
+
               <button
                 onClick={() => setShowPaymentModal(false)}
                 className="float-right"
@@ -140,14 +163,14 @@ export const Results = ({ results, quizId }) => {
                 <X />
               </button>
 
-              <h2 className="text-2xl font-bold mb-4 text-center">
+              <h2 className="text-2xl font-bold text-center mb-6">
                 Scan to Pay ₹499
               </h2>
 
               <img
                 src="/qr.png"
                 alt="QR"
-                className="w-64 mx-auto mb-6"
+                className="w-56 mx-auto mb-6"
               />
 
               <input
@@ -159,7 +182,7 @@ export const Results = ({ results, quizId }) => {
               />
 
               {emailError && (
-                <p className="text-red-500 text-sm">{emailError}</p>
+                <p className="text-red-500 text-sm mb-2">{emailError}</p>
               )}
 
               <input
@@ -176,19 +199,17 @@ export const Results = ({ results, quizId }) => {
                 Submit Payment Proof
               </Button>
 
-              {paymentStatus === "uploading" && (
-                <p className="text-center mt-4">Uploading...</p>
-              )}
-
               {paymentStatus === "success" && (
                 <p className="text-center mt-4 text-green-600">
                   Payment submitted. Check your email soon.
                 </p>
               )}
+
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
+
     </div>
   );
 };

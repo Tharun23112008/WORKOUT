@@ -4,22 +4,30 @@ import { Lock, CheckCircle2, X, QrCode, Upload } from 'lucide-react';
 import { Button } from '../components/ui/button';
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${https://workout-cwle.onrender.com}/api`;
+const API = `${BACKEND_URL}/api`;
 
 export const Results = ({ results, quizId }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentScreenshot, setPaymentScreenshot] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('pending');
 
-  // Lock background scroll when modal is open
   useEffect(() => {
     if (showPaymentModal) {
       document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
+      document.documentElement.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
     }
     return () => {
       document.body.style.overflow = '';
+      document.body.style.position = '';
+      document.body.style.width = '';
+      document.documentElement.style.overflow = '';
     };
   }, [showPaymentModal]);
 
@@ -67,8 +75,8 @@ export const Results = ({ results, quizId }) => {
 
           {/* Free Preview Section */}
           <div className="glass-morphism-strong rounded-full p-12 mb-12 relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full blur-[100px] opacity-10"></div>
-            <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary rounded-full blur-[100px] opacity-10"></div>
+            <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full blur-[100px] opacity-10 pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary rounded-full blur-[100px] opacity-10 pointer-events-none"></div>
 
             <div className="relative z-10">
               <div className="grid sm:grid-cols-2 gap-10">
@@ -111,8 +119,8 @@ export const Results = ({ results, quizId }) => {
 
           {/* Paywall Section */}
           <div className="glass-morphism-strong rounded-full p-14 relative overflow-hidden glow-gradient">
-            <div className="absolute top-0 right-0 w-96 h-96 bg-primary rounded-full blur-[120px] opacity-20"></div>
-            <div className="absolute bottom-0 left-0 w-96 h-96 bg-secondary rounded-full blur-[120px] opacity-20"></div>
+            <div className="absolute top-0 right-0 w-96 h-96 bg-primary rounded-full blur-[120px] opacity-20 pointer-events-none"></div>
+            <div className="absolute bottom-0 left-0 w-96 h-96 bg-secondary rounded-full blur-[120px] opacity-20 pointer-events-none"></div>
 
             <div className="relative z-10">
               <div className="flex items-center justify-center gap-4 mb-6">
@@ -181,7 +189,7 @@ export const Results = ({ results, quizId }) => {
               onClick={(e) => e.stopPropagation()}
               className="glass-morphism-strong rounded-3xl p-10 max-w-2xl w-full relative max-h-[90vh] overflow-y-auto"
             >
-              {/* ✅ FIX: z-20 so it sits above gradient orbs */}
+              {/* X Button - z-20 to sit above gradient orbs */}
               <button
                 onClick={() => setShowPaymentModal(false)}
                 className="absolute top-6 right-6 z-20 glass-morphism p-2 rounded-full hover:glass-morphism-strong transition-all"
@@ -189,7 +197,7 @@ export const Results = ({ results, quizId }) => {
                 <X className="w-6 h-6 text-white" />
               </button>
 
-              {/* Gradient Orbs - z-0 so they don't block clicks */}
+              {/* Gradient Orbs - pointer-events-none so they don't block clicks */}
               <div className="absolute top-0 right-0 w-64 h-64 bg-primary rounded-full blur-[100px] opacity-20 z-0 pointer-events-none"></div>
               <div className="absolute bottom-0 left-0 w-64 h-64 bg-secondary rounded-full blur-[100px] opacity-20 z-0 pointer-events-none"></div>
 

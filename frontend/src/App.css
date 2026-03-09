@@ -13,4 +13,8 @@
   filter: blur(8px);
   pointer-events: none;
   user-select: none;
+
+  #emergent-badge {
+  display: none !important;
+}
 }

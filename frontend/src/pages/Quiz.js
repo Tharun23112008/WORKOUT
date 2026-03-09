@@ -5,116 +5,21 @@ import { Button } from "../components/ui/button";
 import { Progress } from "../components/ui/progress";
 import axios from "axios";
 
-const BACKEND_URL =
-  process.env.REACT_APP_BACKEND_URL || "https://workout-cwle.onrender.com";
-
-const API = `${https://workout-cwle.onrender.com}/api`;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || "https://workout-cwle.onrender.com";
+const API = `${BACKEND_URL}/api`;
 
 const QUESTIONS = [
-  {
-    id: "age",
-    question: "How old are you?",
-    type: "number",
-    placeholder: "Enter your age",
-    min: 13,
-    max: 80,
-  },
-  {
-    id: "gender",
-    question: "What is your gender?",
-    type: "choice",
-    options: [
-      { value: "male", label: "Male" },
-      { value: "female", label: "Female" },
-    ],
-  },
-  {
-    id: "height",
-    question: "What is your height?",
-    type: "number",
-    placeholder: "Height in cm",
-    min: 120,
-    max: 250,
-    suffix: "cm",
-  },
-  {
-    id: "weight",
-    question: "What is your current weight?",
-    type: "number",
-    placeholder: "Weight in kg",
-    min: 30,
-    max: 200,
-    suffix: "kg",
-  },
-  {
-    id: "experience_level",
-    question: "What is your training experience?",
-    type: "choice",
-    options: [
-      { value: "beginner", label: "Beginner", subtitle: "0-6 months" },
-      { value: "intermediate", label: "Intermediate", subtitle: "6-24 months" },
-      { value: "advanced", label: "Advanced", subtitle: "2+ years" },
-    ],
-  },
-  {
-    id: "goal",
-    question: "What is your primary goal?",
-    type: "choice",
-    options: [
-      { value: "gain_muscle", label: "Gain Muscle" },
-      { value: "lose_fat", label: "Lose Fat" },
-      { value: "recomposition", label: "Recomposition", subtitle: "Gain muscle + lose fat" },
-    ],
-  },
-  {
-    id: "training_days",
-    question: "How many days per week can you train?",
-    type: "choice",
-    options: [
-      { value: 3, label: "3 Days" },
-      { value: 4, label: "4 Days" },
-      { value: 5, label: "5 Days" },
-      { value: 6, label: "6 Days" },
-    ],
-  },
-  {
-    id: "equipment",
-    question: "What equipment do you have access to?",
-    type: "choice",
-    options: [
-      { value: "full_gym", label: "Full Gym" },
-      { value: "dumbbells", label: "Dumbbells Only" },
-      { value: "bodyweight", label: "Bodyweight Only" },
-    ],
-  },
-  {
-    id: "dietary_preference",
-    question: "What is your dietary preference?",
-    type: "choice",
-    options: [
-      { value: "non_vegetarian", label: "Non-Vegetarian" },
-      { value: "eggitarian", label: "Eggitarian" },
-      { value: "vegetarian", label: "Vegetarian" },
-    ],
-  },
-  {
-    id: "sleep_hours",
-    question: "How many hours do you sleep on average?",
-    type: "choice",
-    options: [
-      { value: "less_5", label: "Less than 5 hours" },
-      { value: "5_6", label: "5-6 hours" },
-      { value: "6_7", label: "6-7 hours" },
-      { value: "7_plus", label: "7+ hours" },
-    ],
-  },
-  {
-    id: "injuries",
-    question: "Do you have any injuries or limitations?",
-    type: "text",
-    placeholder: "Optional - Leave blank if none",
-    optional: true,
-  },
+  { id: "age", question: "How old are you?", type: "number", placeholder: "Enter your age", min: 13, max: 80 },
+  { id: "gender", question: "What is your gender?", type: "choice", options: [{ value: "male", label: "Male" }, { value: "female", label: "Female" }] },
+  { id: "height", question: "What is your height?", type: "number", placeholder: "Height in cm", min: 120, max: 250, suffix: "cm" },
+  { id: "weight", question: "What is your current weight?", type: "number", placeholder: "Weight in kg", min: 30, max: 200, suffix: "kg" },
+  { id: "experience_level", question: "What is your training experience?", type: "choice", options: [{ value: "beginner", label: "Beginner", subtitle: "0-6 months" }, { value: "intermediate", label: "Intermediate", subtitle: "6-24 months" }, { value: "advanced", label: "Advanced", subtitle: "2+ years" }] },
+  { id: "goal", question: "What is your primary goal?", type: "choice", options: [{ value: "gain_muscle", label: "Gain Muscle" }, { value: "lose_fat", label: "Lose Fat" }, { value: "recomposition", label: "Recomposition", subtitle: "Gain muscle + lose fat" }] },
+  { id: "training_days", question: "How many days per week can you train?", type: "choice", options: [{ value: 3, label: "3 Days" }, { value: 4, label: "4 Days" }, { value: 5, label: "5 Days" }, { value: 6, label: "6 Days" }] },
+  { id: "equipment", question: "What equipment do you have access to?", type: "choice", options: [{ value: "full_gym", label: "Full Gym" }, { value: "dumbbells", label: "Dumbbells Only" }, { value: "bodyweight", label: "Bodyweight Only" }] },
+  { id: "dietary_preference", question: "What is your dietary preference?", type: "choice", options: [{ value: "non_vegetarian", label: "Non-Vegetarian" }, { value: "eggitarian", label: "Eggitarian" }, { value: "vegetarian", label: "Vegetarian" }] },
+  { id: "sleep_hours", question: "How many hours do you sleep on average?", type: "choice", options: [{ value: "less_5", label: "Less than 5 hours" }, { value: "5_6", label: "5-6 hours" }, { value: "6_7", label: "6-7 hours" }, { value: "7_plus", label: "7+ hours" }] },
+  { id: "injuries", question: "Do you have any injuries or limitations?", type: "text", placeholder: "Optional - Leave blank if none", optional: true },
 ];
 
 export const Quiz = ({ onComplete }) => {
@@ -130,7 +35,6 @@ export const Quiz = ({ onComplete }) => {
   const handleChoice = (value) => {
     const updatedAnswers = { ...answers, [currentQuestion.id]: value };
     setAnswers(updatedAnswers);
-
     setTimeout(() => {
       if (currentStep < QUESTIONS.length - 1) {
         setCurrentStep(currentStep + 1);
@@ -143,12 +47,10 @@ export const Quiz = ({ onComplete }) => {
 
   const handleNumberInput = () => {
     const num = parseFloat(inputValue);
-
     if (isNaN(num) || num < currentQuestion.min || num > currentQuestion.max) {
       setError(`Enter a value between ${currentQuestion.min} and ${currentQuestion.max}`);
       return;
     }
-
     setError("");
     handleChoice(num);
   };
@@ -160,12 +62,8 @@ export const Quiz = ({ onComplete }) => {
   const submitQuiz = async (finalAnswers) => {
     setLoading(true);
     setError("");
-
     try {
-   const response = await axios.post(
-  `${API}/payment/submit`,
-  finalAnswers
-);
+      const response = await axios.post(`${API}/quiz/submit`, finalAnswers);
       onComplete(response.data, finalAnswers);
     } catch (err) {
       console.error("Error submitting quiz:", err);
@@ -176,14 +74,12 @@ export const Quiz = ({ onComplete }) => {
 
   return (
     <div className="min-h-screen flex flex-col">
-
       <div className="fixed top-0 left-0 right-0 z-50">
         <Progress value={progress} className="h-1 rounded-none" />
       </div>
 
-      <div className="flex-1 flex items-center justify-center px-6 py-20">
+      <div className="flex-1 flex items-center justify-center px-4 sm:px-6 py-20">
         <div className="w-full max-w-2xl">
-
           <AnimatePresence mode="wait">
             <motion.div
               key={currentStep}
@@ -192,33 +88,27 @@ export const Quiz = ({ onComplete }) => {
               exit={{ opacity: 0, x: -20 }}
               transition={{ duration: 0.3 }}
             >
-
-              <p className="text-xs uppercase tracking-widest font-semibold gradient-text mb-6">
+              <p className="text-xs uppercase tracking-widest font-semibold gradient-text mb-4 sm:mb-6">
                 QUESTION {currentStep + 1} OF {QUESTIONS.length}
               </p>
 
-              <h2 className="text-4xl sm:text-5xl font-bold mb-12 text-white">
+              <h2 className="text-2xl sm:text-4xl lg:text-5xl font-bold mb-8 sm:mb-12 text-white leading-tight">
                 {currentQuestion.question}
               </h2>
 
               {currentQuestion.type === "choice" && (
-                <div className="space-y-4">
+                <div className="space-y-3 sm:space-y-4">
                   {currentQuestion.options.map((option) => (
                     <motion.button
                       key={option.value}
                       onClick={() => handleChoice(option.value)}
                       whileHover={{ scale: 1.02 }}
                       whileTap={{ scale: 0.98 }}
-                      className="w-full glass-morphism border-2 border-transparent hover:border-primary/50 rounded-full p-8 text-left"
+                      className="w-full glass-morphism border-2 border-transparent hover:border-primary/50 rounded-2xl sm:rounded-full p-5 sm:p-8 text-left"
                     >
-                      <div className="font-bold text-xl text-white">
-                        {option.label}
-                      </div>
-
+                      <div className="font-bold text-base sm:text-xl text-white">{option.label}</div>
                       {option.subtitle && (
-                        <div className="text-sm text-muted-foreground mt-1">
-                          {option.subtitle}
-                        </div>
+                        <div className="text-xs sm:text-sm text-muted-foreground mt-1">{option.subtitle}</div>
                       )}
                     </motion.button>
                   ))}
@@ -227,64 +117,47 @@ export const Quiz = ({ onComplete }) => {
 
               {(currentQuestion.type === "number" || currentQuestion.type === "text") && (
                 <div>
-                  <div className="flex gap-4">
-
+                  <div className="flex gap-3 sm:gap-4">
                     <input
                       type={currentQuestion.type === "number" ? "number" : "text"}
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter") {
-                          currentQuestion.type === "number"
-                            ? handleNumberInput()
-                            : handleTextInput();
+                          currentQuestion.type === "number" ? handleNumberInput() : handleTextInput();
                         }
                       }}
                       placeholder={currentQuestion.placeholder}
-                      className="flex-1 glass-morphism h-16 text-lg px-6 rounded-full text-white"
+                      className="flex-1 glass-morphism h-14 sm:h-16 text-base sm:text-lg px-4 sm:px-6 rounded-2xl sm:rounded-full text-white"
                     />
-
                     <Button
-                      onClick={
-                        currentQuestion.type === "number"
-                          ? handleNumberInput
-                          : handleTextInput
-                      }
+                      onClick={currentQuestion.type === "number" ? handleNumberInput : handleTextInput}
                       disabled={!currentQuestion.optional && !inputValue}
                       size="lg"
-                      className="bg-gradient-button h-16 px-10 rounded-full"
+                      className="bg-gradient-button h-14 sm:h-16 px-6 sm:px-10 rounded-2xl sm:rounded-full flex-shrink-0"
                     >
-                      <ChevronRight className="w-6 h-6" />
+                      <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6" />
                     </Button>
-
                   </div>
 
                   {currentQuestion.suffix && (
-                    <p className="text-sm text-muted-foreground mt-2">
-                      In {currentQuestion.suffix}
-                    </p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mt-2">In {currentQuestion.suffix}</p>
                   )}
 
-                  {error && (
-                    <p className="text-red-500 text-sm mt-2">{error}</p>
-                  )}
+                  {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
                 </div>
               )}
 
               {loading && (
                 <div className="text-center mt-8">
-                  <p className="text-muted-foreground">
-                    Calculating your protocol...
-                  </p>
+                  <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
+                  <p className="text-muted-foreground text-sm sm:text-base">Calculating your protocol...</p>
                 </div>
               )}
-
             </motion.div>
           </AnimatePresence>
-
         </div>
       </div>
-
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { X } from "lucide-react";
 import { Button } from "../components/ui/button";
@@ -13,6 +13,18 @@ export const Results = ({ results, quizId }) => {
   const [userEmail, setUserEmail] = useState("");
   const [emailError, setEmailError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // Lock body scroll when modal is open
+  useEffect(() => {
+    if (showPaymentModal) {
+      document.body.style.overflow = "hidden";
+    } else {
+      document.body.style.overflow = "";
+    }
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [showPaymentModal]);
 
   const handleUnlock = () => {
     setShowPaymentModal(true);
@@ -121,14 +133,14 @@ export const Results = ({ results, quizId }) => {
       <AnimatePresence>
         {showPaymentModal && (
           <motion.div
-            className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50"
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 overflow-hidden"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setShowPaymentModal(false)}
           >
             <motion.div
-              className="bg-white text-black p-8 rounded-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto"
+              className="bg-white text-black p-8 rounded-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto mx-4"
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.9 }}

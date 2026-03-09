@@ -49,7 +49,7 @@ export const Results = ({ results, quizId }) => {
 
       const res = await fetch(`${API}/payment/submit`, {
         method: "POST",
-        body: formData
+        body: formData,
       });
 
       if (!res.ok) throw new Error("Server error");
@@ -65,52 +65,37 @@ export const Results = ({ results, quizId }) => {
 
   return (
     <div className="min-h-screen py-16 px-5 bg-black text-white">
-
       <div className="max-w-4xl mx-auto">
-
         <h1 className="text-3xl md:text-5xl font-bold text-center mb-10">
           Your Free Snapshot
         </h1>
 
         {/* CALORIES + PROTEIN */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mb-12">
-
           <div className="bg-white/5 p-8 rounded-2xl text-center">
             <p className="text-xs uppercase tracking-wider text-gray-400">
               Daily Calories
             </p>
-
             <p className="text-4xl md:text-5xl font-bold mt-2">
               {results?.calories || "..."}
             </p>
-
-            <p className="text-sm text-gray-400 mt-2">
-              kcal per day
-            </p>
+            <p className="text-sm text-gray-400 mt-2">kcal per day</p>
           </div>
 
           <div className="bg-white/5 p-8 rounded-2xl text-center">
             <p className="text-xs uppercase tracking-wider text-gray-400">
               Protein Target
             </p>
-
             <p className="text-4xl md:text-5xl font-bold mt-2">
               {results?.protein || "..."}g
             </p>
-
-            <p className="text-sm text-gray-400 mt-2">
-              per day
-            </p>
+            <p className="text-sm text-gray-400 mt-2">per day</p>
           </div>
-
         </div>
 
         {/* TRAINING PREVIEW */}
         <div className="bg-white/5 p-6 rounded-xl text-center mb-12">
-          <p className="text-sm text-gray-400 mb-2">
-            Your Training Structure
-          </p>
-
+          <p className="text-sm text-gray-400 mb-2">Your Training Structure</p>
           <p className="text-lg md:text-xl">
             {results?.training_plan || "Custom training split"}
           </p>
@@ -118,24 +103,17 @@ export const Results = ({ results, quizId }) => {
 
         {/* PAYWALL */}
         <div className="text-center">
-
           <h2 className="text-2xl md:text-3xl font-bold mb-4">
             Unlock the Full 365-Day Protocol
           </h2>
-
           <p className="text-gray-400 mb-6 max-w-lg mx-auto">
-            Complete workout system, nutrition plan, recovery protocols,
-            and a downloadable PDF blueprint.
+            Complete workout system, nutrition plan, recovery protocols, and a
+            downloadable PDF blueprint.
           </p>
-
-          <div className="text-3xl font-bold mb-6">
-            ₹499 one-time
-          </div>
-
+          <div className="text-3xl font-bold mb-6">₹499 one-time</div>
           <Button onClick={handleUnlock} size="lg">
             Unlock Full Plan
           </Button>
-
         </div>
       </div>
 
@@ -143,24 +121,25 @@ export const Results = ({ results, quizId }) => {
       <AnimatePresence>
         {showPaymentModal && (
           <motion.div
-            className="fixed inset-0 bg-black/80 flex items-center justify-center p-6"
+            className="fixed inset-0 bg-black/80 flex items-center justify-center p-6 z-50"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            onClick={() => setShowPaymentModal(false)}
           >
-
             <motion.div
-              className="bg-white text-black p-8 rounded-2xl max-w-md w-full"
+              className="bg-white text-black p-8 rounded-2xl max-w-md w-full relative max-h-[90vh] overflow-y-auto"
               initial={{ scale: 0.9 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.9 }}
+              onClick={(e) => e.stopPropagation()}
             >
-
+              {/* X Button */}
               <button
                 onClick={() => setShowPaymentModal(false)}
-                className="float-right"
+                className="absolute top-4 right-4 z-10 bg-gray-100 hover:bg-gray-200 rounded-full p-1"
               >
-                <X />
+                <X size={20} />
               </button>
 
               <h2 className="text-2xl font-bold text-center mb-6">
@@ -204,12 +183,10 @@ export const Results = ({ results, quizId }) => {
                   Payment submitted. Check your email soon.
                 </p>
               )}
-
             </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-
     </div>
   );
 };

@@ -11,3 +11,4 @@ pymongo
 reportlab
 pillow
 httpx
+resend

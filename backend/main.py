@@ -403,7 +403,9 @@ Stay consistent. Results take time.
     encoders.encode_base64(pdf_attachment)
     pdf_attachment.add_header("Content-Disposition", "attachment", filename="365_Days_of_Discipline.pdf")
     msg.attach(pdf_attachment)
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.ehlo()
+        server.starttls()
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.sendmail(SMTP_EMAIL, email, msg.as_string())
 
@@ -481,7 +483,7 @@ Stats:
 
 """
                 body += f"""To APPROVE and send PDF, visit:
-https://your-backend-url.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
+https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
 
 Payment screenshot attached."""
                 msg.attach(MIMEText(body, "plain"))
@@ -489,7 +491,9 @@ Payment screenshot attached."""
                 img_part.add_header("Content-Disposition", "attachment",
                                     filename=f"payment_{payment_id[:8]}.jpg")
                 msg.attach(img_part)
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                with smtplib.SMTP("smtp.gmail.com", 587) as server:
+                    server.ehlo()
+                    server.starttls()
                     server.login(SMTP_EMAIL, SMTP_PASSWORD)
                     server.sendmail(SMTP_EMAIL, NOTIFY_EMAIL, msg.as_string())
             except Exception as e:
@@ -551,3 +555,4 @@ async def approve_payment(payment_id: str, secret: str):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send PDF: {str(e)}")
+

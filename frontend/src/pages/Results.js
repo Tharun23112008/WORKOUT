@@ -305,4 +305,4 @@ export const Results = ({ results, quizId }) => {
       </AnimatePresence>
     </div>
   );
-};
+};-

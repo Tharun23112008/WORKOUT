@@ -3,9 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import uuid
+import smtplib
 import os
 import io
-import base64
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
+from email import encoders
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -14,7 +19,6 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from motor.motor_asyncio import AsyncIOMotorClient
-import resend
 
 app = FastAPI()
 
@@ -26,6 +30,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ===== MONGODB SETUP =====
 MONGODB_URL = os.environ.get("MONGODB_URL", "")
 db_client = None
 db = None
@@ -40,15 +45,16 @@ async def startup_db():
     else:
         print("⚠️ No MONGODB_URL — falling back to in-memory store")
 
+# Fallback in-memory store (used if MongoDB not configured)
 quiz_store = {}
 
-async def save_quiz(quiz_id, data):
+async def save_quiz(quiz_id: str, data: dict):
     if db is not None:
         await db.quizzes.insert_one({"_id": quiz_id, **data})
     else:
         quiz_store[quiz_id] = data
 
-async def get_quiz(quiz_id):
+async def get_quiz(quiz_id: str):
     if db is not None:
         doc = await db.quizzes.find_one({"_id": quiz_id})
         if doc:
@@ -56,7 +62,7 @@ async def get_quiz(quiz_id):
         return doc
     return quiz_store.get(quiz_id)
 
-async def save_payment(payment_id, data):
+async def save_payment(payment_id: str, data: dict):
     if db is not None:
         await db.payments.insert_one({"_id": payment_id, **data})
     else:
@@ -66,9 +72,10 @@ async def get_all_payments():
     if db is not None:
         cursor = db.payments.find({})
         return await cursor.to_list(length=100)
+    # fallback
     return [v for k, v in quiz_store.items() if k.startswith("payment_")]
 
-async def update_payment_status(payment_id, status):
+async def update_payment_status(payment_id: str, status: str):
     if db is not None:
         await db.payments.update_one({"_id": payment_id}, {"$set": {"status": status}})
     else:
@@ -76,14 +83,13 @@ async def update_payment_status(payment_id, status):
         if key in quiz_store:
             quiz_store[key]["status"] = status
 
-RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+# ===== EMAIL CONFIG =====
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
+SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
 NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
-ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
-FROM_EMAIL = "onboarding@resend.dev"
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")  # Secret key to protect admin routes
 
-if RESEND_API_KEY:
-    resend.api_key = RESEND_API_KEY
-
+# ===== MODELS =====
 class QuizAnswers(BaseModel):
     age: int
     weight: float
@@ -103,6 +109,7 @@ class QuizResponse(BaseModel):
     protein: int
     training_plan: str
 
+# ===== CALCULATION LOGIC =====
 def calculate_bmr(weight, height, age, gender):
     if gender.lower() == "male":
         return int(10 * weight + 6.25 * height - 5 * age + 5)
@@ -137,28 +144,41 @@ def calculate_macros(answers):
     fats = int((calories * 0.25) / 9)
     return {"calories": calories, "protein": protein, "carbs": carbs, "fats": fats}
 
+# ===== PDF GENERATION =====
 def generate_pdf(answers, macros, user_email):
     buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            rightMargin=40, leftMargin=40,
+                            topMargin=40, bottomMargin=40)
+
     PRIMARY = HexColor("#FF5B9E")
     SECONDARY = HexColor("#34B3D2")
     DARK = HexColor("#0A0A0A")
     GRAY = HexColor("#888888")
     LIGHT_GRAY = HexColor("#F5F5F5")
+
     styles = getSampleStyleSheet()
-    title_style = ParagraphStyle("Title", fontSize=28, textColor=PRIMARY, spaceAfter=6, alignment=TA_CENTER, fontName="Helvetica-Bold")
-    subtitle_style = ParagraphStyle("Subtitle", fontSize=12, textColor=GRAY, spaceAfter=20, alignment=TA_CENTER)
-    heading_style = ParagraphStyle("Heading", fontSize=14, textColor=PRIMARY, spaceAfter=8, fontName="Helvetica-Bold")
-    body_style = ParagraphStyle("Body", fontSize=10, textColor=DARK, spaceAfter=6, leading=16)
+    title_style = ParagraphStyle("Title", fontSize=28, textColor=PRIMARY,
+                                  spaceAfter=6, alignment=TA_CENTER, fontName="Helvetica-Bold")
+    subtitle_style = ParagraphStyle("Subtitle", fontSize=12, textColor=GRAY,
+                                     spaceAfter=20, alignment=TA_CENTER)
+    heading_style = ParagraphStyle("Heading", fontSize=14, textColor=PRIMARY,
+                                    spaceAfter=8, fontName="Helvetica-Bold")
+    body_style = ParagraphStyle("Body", fontSize=10, textColor=DARK,
+                                 spaceAfter=6, leading=16)
     small_style = ParagraphStyle("Small", fontSize=9, textColor=GRAY, spaceAfter=4)
+
     goal_map = {"gain_muscle": "Gain Muscle", "lose_fat": "Lose Fat", "recomposition": "Recomposition"}
     goal_label = goal_map.get(answers.get("goal", ""), "Custom")
     training_plan = get_training_plan(answers.get("training_days", 4), answers.get("experience_level", "intermediate"))
+
     story = []
+
     story.append(Paragraph("365 DAYS OF DISCIPLINE", title_style))
     story.append(Paragraph("Your Personalized Protocol Blueprint", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY))
     story.append(Spacer(1, 16))
+
     story.append(Paragraph("YOUR STATS", heading_style))
     stats_data = [
         ["Age", f"{answers.get('age')} years", "Weight", f"{answers.get('weight')} kg"],
@@ -180,6 +200,7 @@ def generate_pdf(answers, macros, user_email):
     ]))
     story.append(stats_table)
     story.append(Spacer(1, 20))
+
     story.append(Paragraph("DAILY NUTRITION TARGETS", heading_style))
     nutrition_data = [
         ["CALORIES", "PROTEIN", "CARBS", "FATS"],
@@ -202,9 +223,11 @@ def generate_pdf(answers, macros, user_email):
     ]))
     story.append(nutrition_table)
     story.append(Spacer(1, 20))
+
     story.append(Paragraph("YOUR TRAINING STRUCTURE", heading_style))
     story.append(Paragraph(f"<b>{training_plan}</b>", body_style))
     story.append(Spacer(1, 8))
+
     workout_split = {
         6: [
             ("Monday", "CHEST", "Bench Press 4x8, Incline DB Press 3x10, Cable Flyes 3x12, Push-Ups 2x15"),
@@ -239,10 +262,12 @@ def generate_pdf(answers, macros, user_email):
             ("Friday", "FULL BODY C", "Front Squat 3x8, DB Press 3x10, Cable Row 3x12, Lateral Raises 3x12"),
         ],
     }
+
     split = workout_split.get(answers.get("training_days", 4), workout_split[4])
     workout_data = [["DAY", "FOCUS", "EXERCISES"]]
     for day, focus, exercises in split:
         workout_data.append([day, focus, exercises])
+
     workout_table = Table(workout_data, colWidths=[70, 80, 322])
     workout_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), SECONDARY),
@@ -261,6 +286,7 @@ def generate_pdf(answers, macros, user_email):
     ]))
     story.append(workout_table)
     story.append(Spacer(1, 20))
+
     story.append(Paragraph("NUTRITION GUIDE", heading_style))
     diet = answers.get("dietary_preference", "non_vegetarian")
     if diet == "vegetarian":
@@ -290,9 +316,11 @@ def generate_pdf(answers, macros, user_email):
             ("Dinner", f"~{int(macros['calories']*0.20)} kcal", "Grilled chicken/fish + roti + vegetables"),
             ("Before bed", f"~{int(macros['calories']*0.05)} kcal", "Greek yogurt or cottage cheese"),
         ]
+
     meal_data = [["MEAL", "CALORIES", "EXAMPLE"]]
     for meal, cals, example in meal_examples:
         meal_data.append([meal, cals, example])
+
     meal_table = Table(meal_data, colWidths=[90, 80, 302])
     meal_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), PRIMARY),
@@ -309,6 +337,7 @@ def generate_pdf(answers, macros, user_email):
     ]))
     story.append(meal_table)
     story.append(Spacer(1, 20))
+
     story.append(Paragraph("RECOVERY PROTOCOL", heading_style))
     for item in [
         "Sleep 7-9 hours every night — this is non-negotiable for muscle growth",
@@ -320,6 +349,7 @@ def generate_pdf(answers, macros, user_email):
     ]:
         story.append(Paragraph(f"• {item}", body_style))
     story.append(Spacer(1, 20))
+
     story.append(Paragraph("THE 365 DISCIPLINE RULES", heading_style))
     for i, rule in enumerate([
         "Never miss a Monday — momentum starts the week",
@@ -331,20 +361,26 @@ def generate_pdf(answers, macros, user_email):
     ], 1):
         story.append(Paragraph(f"{i}. {rule}", body_style))
     story.append(Spacer(1, 20))
+
     story.append(HRFlowable(width="100%", thickness=1, color=PRIMARY))
     story.append(Spacer(1, 8))
     story.append(Paragraph(
         f"Generated for: {user_email} | Date: {datetime.now().strftime('%d %b %Y')} | 365 Days of Discipline",
         small_style
     ))
+
     doc.build(story)
     buffer.seek(0)
     return buffer
 
 
 def send_pdf_email(email: str, quiz_data: dict):
+    """Send PDF blueprint to customer email."""
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
-    pdf_base64 = base64.b64encode(pdf_buffer.read()).decode("utf-8")
+    msg = MIMEMultipart()
+    msg["From"] = SMTP_EMAIL
+    msg["To"] = email
+    msg["Subject"] = "Your 365 Days of Discipline Blueprint 💪"
     body = f"""Hi,
 
 Thank you for your payment! Your personalized 365 Days of Discipline blueprint is attached.
@@ -361,22 +397,25 @@ Stay consistent. Results take time.
 
 - Tharun
 """
-    resend.Emails.send({
-        "from": FROM_EMAIL,
-        "to": email,
-        "subject": "Your 365 Days of Discipline Blueprint 💪",
-        "text": body,
-        "attachments": [{"filename": "365_Days_of_Discipline.pdf", "content": pdf_base64}]
-    })
+    msg.attach(MIMEText(body, "plain"))
+    pdf_attachment = MIMEBase("application", "octet-stream")
+    pdf_attachment.set_payload(pdf_buffer.read())
+    encoders.encode_base64(pdf_attachment)
+    pdf_attachment.add_header("Content-Disposition", "attachment", filename="365_Days_of_Discipline.pdf")
+    msg.attach(pdf_attachment)
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        server.login(SMTP_EMAIL, SMTP_PASSWORD)
+        server.sendmail(SMTP_EMAIL, email, msg.as_string())
 
 
+# ===== ROUTES =====
 @app.get("/")
 async def root():
     return {"message": "365 Days of Discipline API Ready"}
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "resend_configured": bool(RESEND_API_KEY), "mongodb_configured": bool(MONGODB_URL)}
+    return {"status": "ok", "smtp_configured": bool(SMTP_PASSWORD), "mongodb_configured": bool(MONGODB_URL)}
 
 @app.post("/api/quiz/submit", response_model=QuizResponse)
 async def submit_quiz(answers: QuizAnswers):
@@ -384,70 +423,131 @@ async def submit_quiz(answers: QuizAnswers):
         macros = calculate_macros(answers)
         quiz_id = str(uuid.uuid4())
         training_plan = get_training_plan(answers.training_days, answers.experience_level)
-        data = {"answers": answers.dict(), "macros": macros, "training_plan": training_plan, "created_at": datetime.now().isoformat()}
+        data = {
+            "answers": answers.dict(),
+            "macros": macros,
+            "training_plan": training_plan,
+            "created_at": datetime.now().isoformat()
+        }
         await save_quiz(quiz_id, data)
-        return QuizResponse(quiz_id=quiz_id, calories=macros["calories"], protein=macros["protein"], training_plan=training_plan)
+        return QuizResponse(quiz_id=quiz_id, calories=macros["calories"],
+                            protein=macros["protein"], training_plan=training_plan)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/payment/submit")
-async def submit_payment(quiz_id: str = Form(...), email: str = Form(...), screenshot: UploadFile = File(...)):
+async def submit_payment(
+    quiz_id: str = Form(...),
+    email: str = Form(...),
+    screenshot: UploadFile = File(...)
+):
     try:
         screenshot_data = await screenshot.read()
-        screenshot_base64 = base64.b64encode(screenshot_data).decode("utf-8")
         quiz_data = await get_quiz(quiz_id)
         payment_id = str(uuid.uuid4())
-        payment_record = {"payment_id": payment_id, "quiz_id": quiz_id, "email": email, "status": "pending", "submitted_at": datetime.now().isoformat(), "quiz_data": quiz_data}
+
+        # Save payment record
+        payment_record = {
+            "payment_id": payment_id,
+            "quiz_id": quiz_id,
+            "email": email,
+            "status": "pending",
+            "submitted_at": datetime.now().isoformat(),
+            "quiz_data": quiz_data
+        }
         await save_payment(payment_id, payment_record)
-        if RESEND_API_KEY:
+
+        # Notify admin with screenshot
+        if SMTP_PASSWORD:
             try:
-                body = f"New payment received!\n\nCustomer: {email}\nPayment ID: {payment_id}\nTime: {datetime.now().strftime('%d %b %Y %H:%M')}"
+                msg = MIMEMultipart()
+                msg["From"] = SMTP_EMAIL
+                msg["To"] = NOTIFY_EMAIL
+                msg["Subject"] = f"💰 New Payment - {email}"
+                body = f"""New payment received!
+
+Customer Email: {email}
+Payment ID: {payment_id}
+Quiz ID: {quiz_id}
+Time: {datetime.now().strftime('%d %b %Y %H:%M')}
+"""
                 if quiz_data:
                     a = quiz_data["answers"]
                     m = quiz_data["macros"]
-                    body += f"\n\nAge: {a.get('age')} | Weight: {a.get('weight')}kg | Goal: {a.get('goal')}\nCalories: {m['calories']} kcal | Protein: {m['protein']}g"
-                body += f"\n\nAPPROVE & send PDF:\nhttps://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}\n\nScreenshot attached."
-                resend.Emails.send({
-                    "from": FROM_EMAIL,
-                    "to": NOTIFY_EMAIL,
-                    "subject": f"💰 New Payment - {email}",
-                    "text": body,
-                    "attachments": [{"filename": f"payment_{payment_id[:8]}.jpg", "content": screenshot_base64}]
-                })
+                    body += f"""
+Stats:
+- Age: {a.get('age')} | Weight: {a.get('weight')}kg | Goal: {a.get('goal')}
+- Calories: {m['calories']} kcal | Protein: {m['protein']}g
+
+"""
+                body += f"""To APPROVE and send PDF, visit:
+https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
+
+Payment screenshot attached."""
+                msg.attach(MIMEText(body, "plain"))
+                img_part = MIMEImage(screenshot_data)
+                img_part.add_header("Content-Disposition", "attachment",
+                                    filename=f"payment_{payment_id[:8]}.jpg")
+                msg.attach(img_part)
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                    server.login(SMTP_EMAIL, SMTP_PASSWORD)
+                    server.sendmail(SMTP_EMAIL, NOTIFY_EMAIL, msg.as_string())
             except Exception as e:
                 print(f"Admin email error: {e}")
+
         return {"status": "success", "message": "Payment submitted. You'll receive your PDF within 24 hours after verification."}
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ===== ADMIN: VIEW PENDING PAYMENTS =====
 @app.get("/api/admin/payments")
 async def list_payments(secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
     payments = await get_all_payments()
+    # Remove _id field for clean response
     for p in payments:
         p.pop("_id", None)
     return {"payments": payments}
 
+
+# ===== ADMIN: APPROVE PAYMENT & SEND PDF =====
 @app.get("/api/admin/approve/{payment_id}")
 async def approve_payment(payment_id: str, secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
+
+    # Fetch payment from DB
     if db is not None:
         payment = await db.payments.find_one({"_id": payment_id})
     else:
         payment = quiz_store.get(f"payment_{payment_id}")
+
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
+
     if payment.get("status") == "approved":
         return {"status": "already_approved", "message": "PDF was already sent to this customer."}
+
     email = payment["email"]
-    quiz_data = payment.get("quiz_data") or await get_quiz(payment["quiz_id"])
+    quiz_data = payment.get("quiz_data")
+
     if not quiz_data:
-        raise HTTPException(status_code=404, detail="Quiz data not found.")
+        # Try fetching from quiz store
+        quiz_data = await get_quiz(payment["quiz_id"])
+
+    if not quiz_data:
+        raise HTTPException(status_code=404, detail="Quiz data not found. Cannot generate PDF.")
+
+    # Send PDF to customer
     try:
         send_pdf_email(email, quiz_data)
         await update_payment_status(payment_id, "approved")
-        return {"status": "success", "message": f"✅ PDF sent to {email} successfully!"}
+        return {
+            "status": "success",
+            "message": f"✅ PDF sent to {email} successfully!"
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send PDF: {str(e)}")

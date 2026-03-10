@@ -481,7 +481,7 @@ Stats:
 
 """
                 body += f"""To APPROVE and send PDF, visit:
-https://your-backend-url.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
+https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
 
 Payment screenshot attached."""
                 msg.attach(MIMEText(body, "plain"))

@@ -5,15 +5,9 @@ python-dotenv
 python-multipart
 passlib[bcrypt]
 python-jose[cryptography]
-
-stripe
 requests
-
 motor
 pymongo
-
 reportlab
-weasyprint
 pillow
-
 httpx

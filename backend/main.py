@@ -1,12 +1,26 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional
+import uuid
+import smtplib
+import os
+import io
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email.mime.image import MIMEImage
+from email import encoders
+from datetime import datetime
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.colors import HexColor, white, black
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.units import inch
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
-app = FastAPI(
-    title="Workout API",
-    version="0.1.0"
-)
+app = FastAPI()
 
-# Allow frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -15,88 +29,68 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/")
-def root():
-    return {"status": "API running"}
+quiz_store = {}
 
-@app.get("/health")
-def health():
-    return {"message": "Server is healthy"}
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
+SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
+NOTIFY_EMAIL = "tharunatwork23@gmail.com"
 
+class QuizAnswers(BaseModel):
+    age: int
+    weight: float
+    height: int
+    gender: str
+    goal: str
+    training_days: int
+    dietary_preference: str
+    experience_level: Optional[str] = "intermediate"
+    equipment: Optional[str] = "full_gym"
+    sleep_hours: Optional[str] = "7_plus"
+    injuries: Optional[str] = ""
 
-# CALORIE + PROTEIN CALCULATOR
-def calculate_results(data):
+class QuizResponse(BaseModel):
+    quiz_id: str
+    calories: int
+    protein: int
+    training_plan: str
 
-    weight = float(data.get("weight", 70))
-    height = float(data.get("height", 170))
-    age = int(data.get("age", 25))
-    gender = data.get("gender", "male")
-    goal = data.get("goal", "maintain")
-    training_days = int(data.get("training_days", 3))
+def calculate_bmr(weight, height, age, gender):
+    if gender.lower() == "male":
+        return int(10 * weight + 6.25 * height - 5 * age + 5)
+    return int(10 * weight + 6.25 * height - 5 * age - 161)
 
-    # BMR
-    if gender == "male":
-        bmr = 10 * weight + 6.25 * height - 5 * age + 5
-    else:
-        bmr = 10 * weight + 6.25 * height - 5 * age - 161
+def calculate_tdee(bmr, training_days):
+    if training_days <= 2: multiplier = 1.375
+    elif training_days <= 4: multiplier = 1.55
+    elif training_days <= 5: multiplier = 1.725
+    else: multiplier = 1.9
+    return int(bmr * multiplier)
 
-    # activity multiplier
-    if training_days <= 2:
-        activity = 1.375
-    elif training_days <= 4:
-        activity = 1.55
-    else:
-        activity = 1.725
-
-    tdee = bmr * activity
-
-    # goal adjustment
-    if goal == "lose_fat":
-        calories = tdee - 400
-    elif goal == "gain_muscle":
-        calories = tdee + 300
-    else:
-        calories = tdee
-
-    # protein
-    protein = weight * 2
-
-    return int(calories), int(protein)
-
-
-@app.post("/api/quiz/submit")
-async def submit_quiz(data: dict):
-
-    calories, protein = calculate_results(data)
-
-    return {
-        "quiz_id": "demo123",
-        "calories": calories,
-        "protein": protein,
-        "training_plan": "Push Pull Legs Split"
+def get_training_plan(training_days, experience_level):
+    plans = {
+        3: "Full Body 3-Day Split (Mon/Wed/Fri)",
+        4: "Upper/Lower 4-Day Split",
+        5: "Push/Pull/Legs + Upper/Lower",
+        6: "Bro Split: Chest/Back/Shoulders/Biceps/Triceps/Legs"
     }
+    return plans.get(training_days, "Custom Training Split")
 
+def calculate_macros(answers):
+    bmr = calculate_bmr(answers.weight, answers.height, answers.age, answers.gender)
+    tdee = calculate_tdee(bmr, answers.training_days)
+    goal_adjustments = {"lose_fat": -500, "gain_muscle": 300, "recomposition": -200}
+    calories = tdee + goal_adjustments.get(answers.goal, 0)
+    protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
+    protein = int(answers.weight * protein_per_kg)
+    if answers.dietary_preference.lower() == "vegetarian":
+        protein = int(protein * 0.95)
+    carbs = int((calories * 0.45) / 4)
+    fats = int((calories * 0.25) / 9)
+    return {"calories": calories, "protein": protein, "carbs": carbs, "fats": fats}
 
-@app.post("/api/payment/submit")
-async def submit_payment(data: dict):
-    return {
-        "checkout_url": "https://example-payment-link.com",
-        "status": "payment_started"
-    }
-
-
-@app.get("/api/checkout/status/{session_id}")
-async def checkout_status(session_id: str):
-    return {
-        "payment_status": "paid",
-        "status": "complete",
-        "metadata": {
-            "quiz_id": "demo123"
-        }
-    }
-
-
-@app.get("/api/pdf/download/{quiz_id}")
+def generate_pdf(answers, macros, user_email):
+    buffer = io.BytesIO()
+    doc = SimpleDocT
 async def download_pdf(quiz_id: str):
     return {
         "message": f"PDF for quiz {quiz_id} will be downloaded here"

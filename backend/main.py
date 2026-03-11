@@ -21,13 +21,6 @@ from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# ===== ENV VARS — must be before anything that uses them =====
-MONGODB_URL = os.environ.get("MONGODB_URL", "")
-SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
-SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
-NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
-ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
-
 app = FastAPI()
 
 app.add_middleware(
@@ -39,6 +32,7 @@ app.add_middleware(
 )
 
 # ===== MONGODB SETUP =====
+MONGODB_URL = os.environ.get("MONGODB_URL", "")
 db_client = None
 db = None
 
@@ -50,7 +44,8 @@ async def startup_db():
             db_client = AsyncIOMotorClient(
                 MONGODB_URL,
                 serverSelectionTimeoutMS=5000,
-                tlsAllowInvalidCertificates=True  # Fix for Render SSL issue
+                tls=True,
+                tlsInsecure=True
             )
             db = db_client["workout365"]
             await db_client.admin.command("ping")

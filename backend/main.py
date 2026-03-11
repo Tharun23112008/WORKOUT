@@ -21,6 +21,13 @@ from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from motor.motor_asyncio import AsyncIOMotorClient
 
+# ===== ENV VARS — must be before anything that uses them =====
+MONGODB_URL = os.environ.get("MONGODB_URL", "")
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
+SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
+NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
+
 app = FastAPI()
 
 app.add_middleware(
@@ -32,6 +39,9 @@ app.add_middleware(
 )
 
 # ===== MONGODB SETUP =====
+db_client = None
+db = None
+
 @app.on_event("startup")
 async def startup_db():
     global db_client, db

@@ -31,6 +31,7 @@ EMAILJS_SERVICE_ID     = os.environ.get("EMAILJS_SERVICE_ID",      "service_y3p7
 EMAILJS_ADMIN_TMPL     = os.environ.get("EMAILJS_ADMIN_TEMPLATE_ID","template_dmwir7u")
 EMAILJS_PDF_TMPL       = os.environ.get("EMAILJS_PDF_TEMPLATE_ID", "template_ecu877b")
 EMAILJS_PUBLIC_KEY     = os.environ.get("EMAILJS_PUBLIC_KEY",      "c3EPeMlWCA9fJbKtq")
+EMAILJS_PRIVATE_KEY    = os.environ.get("EMAILJS_PRIVATE_KEY",     "")
 CLOUDINARY_CLOUD       = os.environ.get("CLOUDINARY_CLOUD_NAME",   "datg4264x")
 CLOUDINARY_API_KEY     = os.environ.get("CLOUDINARY_API_KEY",      "638337381561993")
 CLOUDINARY_API_SECRET  = os.environ.get("CLOUDINARY_API_SECRET",   "3wQLyZCGp66Ry0v71fJCl1nurBg")
@@ -575,6 +576,7 @@ async def send_emailjs(template_params: dict, template_id: str = None):
         "service_id":    EMAILJS_SERVICE_ID,
         "template_id":   template_id or EMAILJS_ADMIN_TMPL,
         "user_id":       EMAILJS_PUBLIC_KEY,
+        "accessToken":   EMAILJS_PRIVATE_KEY,
         "template_params": template_params,
     }
     async with httpx.AsyncClient(timeout=30) as client:
@@ -759,3 +761,4 @@ async def approve_payment(payment_id: str, secret: str):
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")
+

@@ -1,9 +1,15 @@
-fastapi
+astapi
 uvicorn[standard]
 pydantic
+python-dotenv
 python-multipart
+passlib[bcrypt]
+python-jose[cryptography]
+requests
 motor
 pymongo
 reportlab
 pillow
+httpx
+resend
 httpx

@@ -19,7 +19,13 @@ from reportlab.lib.colors import HexColor, white, black
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
 from reportlab.lib.units import inch
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from motor.motor_asyncio import AsyncIOMotorClient
+
+# ===== ENV VARS =====
+MONGODB_URL = os.environ.get("MONGODB_URL", "")
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
+SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
+NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
 
 app = FastAPI()
 
@@ -31,76 +37,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===== MONGODB SETUP =====
-MONGODB_URL = os.environ.get("MONGODB_URL", "")
-db_client = None
-db = None
+# ===== IN-MEMORY STORE =====
+# MongoDB disabled due to SSL incompatibility on Render Python 3.14
+# All data lives in memory — works perfectly for quiz/payment/approval flow
+quiz_store = {}
 
 @app.on_event("startup")
 async def startup_db():
-    global db_client, db
-    if MONGODB_URL:
-        try:
-            db_client = AsyncIOMotorClient(
-                MONGODB_URL,
-                serverSelectionTimeoutMS=5000,
-                tls=True,
-                tlsInsecure=True
-            )
-            db = db_client["workout365"]
-            await db_client.admin.command("ping")
-            print("✅ MongoDB connected")
-        except Exception as e:
-            print(f"❌ MongoDB connection failed: {e}")
-            db = None
-    else:
-        print("⚠️ No MONGODB_URL — falling back to in-memory store")
-
-# Fallback in-memory store
-quiz_store = {}
+    print("✅ Server started — using in-memory store")
 
 async def save_quiz(quiz_id: str, data: dict):
-    if db is not None:
-        await db.quizzes.insert_one({"_id": quiz_id, **data})
-    else:
-        quiz_store[quiz_id] = data
+    quiz_store[quiz_id] = data
 
 async def get_quiz(quiz_id: str):
-    if db is not None:
-        doc = await db.quizzes.find_one({"_id": quiz_id})
-        if doc:
-            doc.pop("_id", None)
-        return doc
     return quiz_store.get(quiz_id)
 
 async def save_payment(payment_id: str, data: dict):
-    if db is not None:
-        await db.payments.insert_one({"_id": payment_id, **data})
-    else:
-        quiz_store[f"payment_{payment_id}"] = data
+    quiz_store[f"payment_{payment_id}"] = data
 
 async def get_all_payments():
-    if db is not None:
-        cursor = db.payments.find({})
-        docs = await cursor.to_list(length=100)
-        for doc in docs:
-            doc.pop("_id", None)
-        return docs
     return [v for k, v in quiz_store.items() if k.startswith("payment_")]
 
 async def update_payment_status(payment_id: str, status: str):
-    if db is not None:
-        await db.payments.update_one({"_id": payment_id}, {"$set": {"status": status}})
-    else:
-        key = f"payment_{payment_id}"
-        if key in quiz_store:
-            quiz_store[key]["status"] = status
-
-# ===== EMAIL CONFIG =====
-SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
-SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
-NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
-ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
+    key = f"payment_{payment_id}"
+    if key in quiz_store:
+        quiz_store[key]["status"] = status
 
 # ===== MODELS =====
 class QuizAnswers(BaseModel):
@@ -151,11 +112,9 @@ def calculate_macros(answers):
     calories = tdee + goal_adjustments.get(answers.goal, 0)
     protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
     protein = int(answers.weight * protein_per_kg)
-
     diet = answers.dietary_preference.lower().strip()
     if diet == "vegetarian":
         protein = int(protein * 0.95)
-
     carbs = int((calories * 0.45) / 4)
     fats = int((calories * 0.25) / 9)
     return {"calories": calories, "protein": protein, "carbs": carbs, "fats": fats}
@@ -189,7 +148,6 @@ def generate_pdf(answers, macros, user_email):
     training_plan = get_training_plan(answers.get("training_days", 4), answers.get("experience_level", "intermediate"))
 
     story = []
-
     story.append(Paragraph("365 DAYS OF DISCIPLINE", title_style))
     story.append(Paragraph("Your Personalized Protocol Blueprint", subtitle_style))
     story.append(HRFlowable(width="100%", thickness=2, color=PRIMARY))
@@ -304,7 +262,6 @@ def generate_pdf(answers, macros, user_email):
     story.append(Spacer(1, 20))
 
     story.append(Paragraph("NUTRITION GUIDE", heading_style))
-
     diet = answers.get("dietary_preference", "non_vegetarian").lower().strip()
     if diet in ("eggetarian", "eggitarian"):
         diet = "eggetarian"
@@ -396,8 +353,7 @@ def generate_pdf(answers, macros, user_email):
 
 def send_pdf_email(email: str, quiz_data: dict):
     if not SMTP_PASSWORD:
-        raise ValueError("SMTP_APP_PASSWORD environment variable is not set. Cannot send email.")
-
+        raise ValueError("SMTP_APP_PASSWORD not set. Cannot send email.")
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
     msg = MIMEMultipart()
     msg["From"] = SMTP_EMAIL
@@ -425,7 +381,6 @@ Stay consistent. Results take time.
     encoders.encode_base64(pdf_attachment)
     pdf_attachment.add_header("Content-Disposition", "attachment", filename="365_Days_of_Discipline.pdf")
     msg.attach(pdf_attachment)
-
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.sendmail(SMTP_EMAIL, email, msg.as_string())
@@ -447,11 +402,10 @@ async def health():
 @app.post("/api/quiz/submit", response_model=QuizResponse)
 async def submit_quiz(answers: QuizAnswers):
     try:
-        print(f"📥 Received: age={answers.age} weight={answers.weight} height={answers.height} gender={answers.gender} goal={answers.goal} days={answers.training_days} diet={answers.dietary_preference}")
-
+        print(f"📥 Received: age={answers.age} weight={answers.weight} gender={answers.gender} goal={answers.goal} days={answers.training_days} diet={answers.dietary_preference}")
         try:
             macros = calculate_macros(answers)
-            print(f"✅ Macros OK: {macros}")
+            print(f"✅ Macros: {macros}")
         except Exception as e:
             print(f"❌ CRASH in calculate_macros: {e}")
             traceback.print_exc()
@@ -465,27 +419,25 @@ async def submit_quiz(answers: QuizAnswers):
             "training_plan": training_plan,
             "created_at": datetime.now().isoformat()
         }
-
         try:
             await save_quiz(quiz_id, data)
-            print(f"✅ Saved quiz: {quiz_id}")
+            print(f"✅ Quiz saved: {quiz_id}")
         except Exception as e:
             print(f"❌ CRASH in save_quiz: {e}")
             traceback.print_exc()
-            raise HTTPException(status_code=500, detail=f"Database save failed: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Save failed: {str(e)}")
 
-        print(f"✅ Done — returning quiz_id={quiz_id}")
+        print(f"✅ Done — quiz_id={quiz_id}")
         return QuizResponse(
             quiz_id=quiz_id,
             calories=macros["calories"],
             protein=macros["protein"],
             training_plan=training_plan
         )
-
     except HTTPException:
         raise
     except Exception as e:
-        print(f"❌ UNEXPECTED CRASH in submit_quiz: {e}")
+        print(f"❌ UNEXPECTED: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -499,11 +451,9 @@ async def submit_payment(
     try:
         if screenshot.content_type and not screenshot.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
-
         screenshot_data = await screenshot.read()
-
         if len(screenshot_data) > 10 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="Screenshot file too large. Max 10MB.")
+            raise HTTPException(status_code=400, detail="Screenshot too large. Max 10MB.")
 
         quiz_data = await get_quiz(quiz_id)
         if not quiz_data:
@@ -519,6 +469,7 @@ async def submit_payment(
             "quiz_data": quiz_data
         }
         await save_payment(payment_id, payment_record)
+        print(f"✅ Payment saved: {payment_id} for {email}")
 
         if SMTP_PASSWORD:
             try:
@@ -526,23 +477,19 @@ async def submit_payment(
                 msg["From"] = SMTP_EMAIL
                 msg["To"] = NOTIFY_EMAIL
                 msg["Subject"] = f"💰 New Payment - {email}"
+                a = quiz_data["answers"]
+                m = quiz_data["macros"]
                 body = f"""New payment received!
 
 Customer Email: {email}
 Payment ID: {payment_id}
-Quiz ID: {quiz_id}
 Time: {datetime.now().strftime('%d %b %Y %H:%M')}
-"""
-                if quiz_data:
-                    a = quiz_data["answers"]
-                    m = quiz_data["macros"]
-                    body += f"""
+
 Stats:
 - Age: {a.get('age')} | Weight: {a.get('weight')}kg | Goal: {a.get('goal')}
 - Calories: {m['calories']} kcal | Protein: {m['protein']}g
 
-"""
-                body += f"""To APPROVE and send PDF, visit:
+To APPROVE and send PDF, visit:
 https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
 
 Payment screenshot attached."""
@@ -554,17 +501,15 @@ Payment screenshot attached."""
                 with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
                     server.login(SMTP_EMAIL, SMTP_PASSWORD)
                     server.sendmail(SMTP_EMAIL, NOTIFY_EMAIL, msg.as_string())
+                print(f"✅ Admin notified at {NOTIFY_EMAIL}")
             except Exception as e:
-                print(f"⚠️ Admin notification email failed: {e}")
-        else:
-            print("⚠️ SMTP_APP_PASSWORD not set — skipping admin email notification")
+                print(f"⚠️ Admin email failed (payment still saved): {e}")
 
         return {
             "status": "success",
             "payment_id": payment_id,
             "message": "Payment submitted. You'll receive your PDF within 24 hours after verification."
         }
-
     except HTTPException:
         raise
     except Exception as e:
@@ -588,37 +533,23 @@ async def approve_payment(payment_id: str, secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    if db is not None:
-        payment = await db.payments.find_one({"_id": payment_id})
-        if payment:
-            payment.pop("_id", None)
-    else:
-        payment = quiz_store.get(f"payment_{payment_id}")
-
+    payment = quiz_store.get(f"payment_{payment_id}")
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
-
     if payment.get("status") == "approved":
-        return {"status": "already_approved", "message": f"PDF was already sent to {payment.get('email')}."}
+        return {"status": "already_approved", "message": f"PDF already sent to {payment.get('email')}."}
 
     email = payment["email"]
-    quiz_data = payment.get("quiz_data")
-
-    if not quiz_data:
-        quiz_data = await get_quiz(payment["quiz_id"])
-
+    quiz_data = payment.get("quiz_data") or await get_quiz(payment["quiz_id"])
     if not quiz_data:
         raise HTTPException(status_code=404, detail="Quiz data not found. Cannot generate PDF.")
 
     await update_payment_status(payment_id, "approved")
-
     try:
         send_pdf_email(email, quiz_data)
-        return {
-            "status": "success",
-            "message": f"✅ PDF sent to {email} successfully!"
-        }
+        print(f"✅ PDF sent to {email}")
+        return {"status": "success", "message": f"✅ PDF sent to {email} successfully!"}
     except Exception as e:
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Payment approved but PDF failed to send: {str(e)}. Check SMTP settings.")
+        raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")

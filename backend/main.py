@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
@@ -620,48 +621,35 @@ async def send_emailjs(template_params: dict, template_id: str = None):
     print(f"EmailJS sent -> {template_params.get('to_email') or template_params.get('customer_email')}")
 
 
-async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str:
-    """Upload PDF to Cloudinary and return a direct download URL."""
-    timestamp = str(int(time_module.time()))
-    public_id  = f"365discipline/{filename.replace('.pdf', '')}"
-    # Signature params must be alphabetically sorted and match EXACTLY what is sent in the request
-    # We only send public_id + timestamp — resource_type is NOT included (it is in the URL path)
-    params_str = f"public_id={public_id}&timestamp={timestamp}"
-    signature  = hashlib.sha1(f"{params_str}{CLOUDINARY_API_SECRET}".encode()).hexdigest()
-    pdf_bytes  = pdf_buffer.read()
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/raw/upload",
-            data={
-                "public_id": public_id,
-                "timestamp": timestamp,
-                "api_key":   CLOUDINARY_API_KEY,
-                "signature": signature,
-            },
-            files={"file": (filename, pdf_bytes, "application/pdf")},
-        )
-        if resp.status_code != 200:
-            raise Exception(f"Cloudinary upload failed: {resp.text}")
-        return resp.json()["secure_url"]
-
-
 async def send_pdf_email(email: str, quiz_data: dict):
-    """Generate PDF, upload to Cloudinary, send link via EmailJS."""
-    pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
-    email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_')
-    filename     = f"365_discipline_{email_prefix}_{uuid.uuid4().hex[:8]}.pdf"
-    pdf_url    = await upload_pdf_to_cloudinary(pdf_buffer, filename)
+    """Generate PDF, store it, send download link via EmailJS."""
+    pdf_buffer   = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
+    pdf_bytes    = pdf_buffer.read()
+    pdf_b64      = base64.b64encode(pdf_bytes).decode("utf-8")
 
+    # Store PDF in SQLite so we can serve it via /api/pdf/{token}
+    token = uuid.uuid4().hex
+    conn  = _get_conn()
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS pdfs (token TEXT PRIMARY KEY, data TEXT NOT NULL, created_at TEXT)"
+    )
+    conn.execute(
+        "INSERT INTO pdfs (token, data, created_at) VALUES (?, ?, ?)",
+        (token, pdf_b64, datetime.now().isoformat())
+    )
+    conn.commit(); conn.close()
+
+    pdf_url = f"https://workout-h4i4.onrender.com/api/pdf/{token}"
     m = quiz_data["macros"]
     await send_emailjs({
-        "to_email":     email,
-        "to_name":      email.split("@")[0],
-        "calories":     str(m["calories"]),
-        "protein":      str(m["protein"]),
-        "carbs":        str(m["carbs"]),
-        "fats":         str(m["fats"]),
+        "to_email":      email,
+        "to_name":       email.split("@")[0],
+        "calories":      str(m["calories"]),
+        "protein":       str(m["protein"]),
+        "carbs":         str(m["carbs"]),
+        "fats":          str(m["fats"]),
         "training_plan": quiz_data.get("training_plan", ""),
-        "pdf_url":      pdf_url,
+        "pdf_url":       pdf_url,
     }, template_id=EMAILJS_PDF_TMPL)
 
 
@@ -766,6 +754,25 @@ async def list_payments(secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
     return {"payments": await get_all_payments()}
+
+
+@app.get("/api/pdf/{token}")
+async def serve_pdf(token: str):
+    """Serve a stored PDF with correct Content-Type so browsers can render it."""
+    conn = _get_conn()
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS pdfs (token TEXT PRIMARY KEY, data TEXT NOT NULL, created_at TEXT)")
+        row  = conn.execute("SELECT data FROM pdfs WHERE token = ?", (token,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="PDF not found or link expired.")
+    pdf_bytes = base64.b64decode(row["data"])
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "inline; filename=365_discipline_blueprint.pdf"},
+    )
 
 
 @app.get("/api/admin/approve/{payment_id}")

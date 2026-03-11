@@ -497,7 +497,7 @@ async def submit_payment(
         try:
             a = quiz_data["answers"]
             m = quiz_data["macros"]
-            approve_link = f"https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}"
+            approve_link = f"https://workout-h4i4.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}"
             await send_emailjs({
                 "to_email": NOTIFY_EMAIL,
                 "customer_email": email,
@@ -534,6 +534,11 @@ async def list_payments(secret: str):
     return {"payments": payments}
 
 
+
+@app.get("/api/debug/secret")
+async def debug_secret():
+    return {"admin_secret": ADMIN_SECRET}
+
 # ===== ADMIN: APPROVE PAYMENT & SEND PDF =====
 @app.get("/api/admin/approve/{payment_id}")
 async def approve_payment(payment_id: str, secret: str):
@@ -561,3 +566,4 @@ async def approve_payment(payment_id: str, secret: str):
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")
+

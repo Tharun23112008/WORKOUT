@@ -587,29 +587,35 @@ async def send_emailjs(template_params: dict, template_id: str = None):
 
 
 async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str:
-    """Upload PDF to Cloudinary and return a download URL."""
+    """Upload PDF to Cloudinary and return a direct download URL."""
     timestamp = str(int(time_module.time()))
-    public_id = f"365discipline/{filename}"
-    params_str = f"public_id={public_id}&timestamp={timestamp}"
+    # Use filename without .pdf extension as public_id (Cloudinary strips it anyway)
+    public_id = f"365discipline/{filename.replace('.pdf', '')}"
+    # resource_type=raw must be included in signature params
+    params_str = f"public_id={public_id}&resource_type=raw&timestamp={timestamp}"
     signature = hashlib.sha1(
         f"{params_str}{CLOUDINARY_API_SECRET}".encode()
     ).hexdigest()
-    pdf_b64 = base64.b64encode(pdf_buffer.read()).decode("utf-8")
-    data_uri = f"data:application/pdf;base64,{pdf_b64}"
+    pdf_bytes = pdf_buffer.read()
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/raw/upload",
             data={
-                "file": data_uri,
-                "public_id": public_id,
-                "timestamp": timestamp,
-                "api_key": CLOUDINARY_API_KEY,
-                "signature": signature,
-            }
+                "public_id":     public_id,
+                "resource_type": "raw",
+                "timestamp":     timestamp,
+                "api_key":       CLOUDINARY_API_KEY,
+                "signature":     signature,
+            },
+            files={"file": (filename, pdf_bytes, "application/pdf")},
         )
         if resp.status_code != 200:
             raise Exception(f"Cloudinary upload failed: {resp.text}")
-        return resp.json()["secure_url"]
+        url = resp.json()["secure_url"]
+        # Ensure URL ends with .pdf so browsers recognise it
+        if not url.endswith(".pdf"):
+            url = url + ".pdf"
+        return url
 
 
 async def send_pdf_email(email: str, quiz_data: dict):
@@ -761,4 +767,3 @@ async def approve_payment(payment_id: str, secret: str):
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")
-

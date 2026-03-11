@@ -626,7 +626,8 @@ async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str
 async def send_pdf_email(email: str, quiz_data: dict):
     """Generate PDF, upload to Cloudinary, send link via EmailJS."""
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
-    filename   = f"365_discipline_{email.split('@')[0]}_{uuid.uuid4().hex[:8]}.pdf"
+    email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_')
+    filename     = f"365_discipline_{email_prefix}_{uuid.uuid4().hex[:8]}.pdf"
     pdf_url    = await upload_pdf_to_cloudinary(pdf_buffer, filename)
 
     m = quiz_data["macros"]

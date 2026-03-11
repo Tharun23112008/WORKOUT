@@ -607,12 +607,7 @@ async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str
         )
         if resp.status_code != 200:
             raise Exception(f"Cloudinary upload failed: {resp.text}")
-        secure_url = resp.json()["secure_url"]
-        download_url = secure_url.replace(
-            "/raw/upload/",
-            "/raw/upload/fl_attachment/"
-        )
-        return download_url
+        return resp.json()["secure_url"]
 
 
 async def send_pdf_email(email: str, quiz_data: dict):
@@ -763,4 +758,4 @@ async def approve_payment(payment_id: str, secret: str):
     except Exception as e:
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}"))}")
+        raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")

@@ -27,6 +27,11 @@ EMAILJS_ADMIN_TEMPLATE_ID = os.environ.get("EMAILJS_ADMIN_TEMPLATE_ID", "templat
 EMAILJS_PDF_TEMPLATE_ID = os.environ.get("EMAILJS_PDF_TEMPLATE_ID", "template_ecu877b")
 EMAILJS_PUBLIC_KEY = os.environ.get("EMAILJS_PUBLIC_KEY", "c3EPeMlWCA9fJbKtq")
 
+# Cloudinary config
+CLOUDINARY_CLOUD_NAME = os.environ.get("CLOUDINARY_CLOUD_NAME", "datg4264x")
+CLOUDINARY_API_KEY = os.environ.get("CLOUDINARY_API_KEY", "638337381561993")
+CLOUDINARY_API_SECRET = os.environ.get("CLOUDINARY_API_SECRET", "3wQLyZCGp66Ry0v71fJCl1nurBg")
+
 app = FastAPI()
 
 app.add_middleware(
@@ -392,10 +397,42 @@ async def send_emailjs(template_params: dict, template_id: str = None):
     print(f"✅ EmailJS sent to {template_params.get('to_email') or template_params.get('customer_email')}")
 
 
-async def send_pdf_email(email: str, quiz_data: dict):
-    """Send PDF to customer as base64 attachment via EmailJS."""
-    pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
+async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str:
+    """Upload PDF to Cloudinary and return the download URL."""
+    import hashlib
+    import hmac
+    import time as time_module
+
+    timestamp = str(int(time_module.time()))
+    public_id = f"365discipline/{filename}"
+    params = f"public_id={public_id}&timestamp={timestamp}"
+    signature = hashlib.sha1(f"{params}{CLOUDINARY_API_SECRET}".encode()).hexdigest()
+
     pdf_b64 = base64.b64encode(pdf_buffer.read()).decode("utf-8")
+    data_uri = f"data:application/pdf;base64,{pdf_b64}"
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.post(
+            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/raw/upload",
+            data={
+                "file": data_uri,
+                "public_id": public_id,
+                "timestamp": timestamp,
+                "api_key": CLOUDINARY_API_KEY,
+                "signature": signature,
+            }
+        )
+        if resp.status_code != 200:
+            raise Exception(f"Cloudinary upload failed: {resp.text}")
+        result = resp.json()
+        return result["secure_url"]
+
+
+async def send_pdf_email(email: str, quiz_data: dict):
+    """Upload PDF to Cloudinary and email the download link via EmailJS."""
+    pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
+    filename = f"365_discipline_{email.split("@")[0]}_{uuid.uuid4().hex[:8]}"
+    pdf_url = await upload_pdf_to_cloudinary(pdf_buffer, filename)
     m = quiz_data["macros"]
     await send_emailjs({
         "to_email": email,
@@ -405,7 +442,7 @@ async def send_pdf_email(email: str, quiz_data: dict):
         "carbs": str(m["carbs"]),
         "fats": str(m["fats"]),
         "training_plan": quiz_data.get("training_plan", ""),
-        "pdf_content": pdf_b64,
+        "pdf_url": pdf_url,
     }, template_id=EMAILJS_PDF_TEMPLATE_ID)
 
 
@@ -566,4 +603,3 @@ async def approve_payment(payment_id: str, secret: str):
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")
-

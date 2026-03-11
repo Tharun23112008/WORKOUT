@@ -3,15 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
 import uuid
-import smtplib
 import os
 import io
 import traceback
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email.mime.image import MIMEImage
-from email import encoders
+import base64
+import httpx
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -22,10 +18,13 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 # ===== ENV VARS =====
 MONGODB_URL = os.environ.get("MONGODB_URL", "")
-SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
-SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
 NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
 ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
+
+# EmailJS config (HTTP-based, works on Render free tier)
+EMAILJS_SERVICE_ID = os.environ.get("EMAILJS_SERVICE_ID", "service_y3p7954")
+EMAILJS_TEMPLATE_ID = os.environ.get("EMAILJS_TEMPLATE_ID", "template_dmwir7u")
+EMAILJS_PUBLIC_KEY = os.environ.get("EMAILJS_PUBLIC_KEY", "c3EPeMlWCA9fJbKtq")
 
 app = FastAPI()
 
@@ -351,39 +350,39 @@ def generate_pdf(answers, macros, user_email):
     return buffer
 
 
-def send_pdf_email(email: str, quiz_data: dict):
-    if not SMTP_PASSWORD:
-        raise ValueError("SMTP_APP_PASSWORD not set. Cannot send email.")
+async def send_emailjs(template_params: dict):
+    """Send email via EmailJS HTTP API — works on Render free tier."""
+    payload = {
+        "service_id": EMAILJS_SERVICE_ID,
+        "template_id": EMAILJS_TEMPLATE_ID,
+        "user_id": EMAILJS_PUBLIC_KEY,
+        "template_params": template_params
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            "https://api.emailjs.com/api/v1.0/email/send",
+            json=payload
+        )
+        if resp.status_code != 200:
+            raise Exception(f"EmailJS error {resp.status_code}: {resp.text}")
+    print(f"✅ EmailJS sent to {template_params.get('to_email') or template_params.get('customer_email')}")
+
+
+async def send_pdf_email(email: str, quiz_data: dict):
+    """Send PDF to customer as base64 attachment via EmailJS."""
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
-    msg = MIMEMultipart()
-    msg["From"] = SMTP_EMAIL
-    msg["To"] = email
-    msg["Subject"] = "Your 365 Days of Discipline Blueprint 💪"
-    body = f"""Hi,
-
-Thank you for your payment! Your personalized 365 Days of Discipline blueprint is attached.
-
-Your Daily Targets:
-- Calories: {quiz_data['macros']['calories']} kcal
-- Protein: {quiz_data['macros']['protein']}g
-- Carbs: {quiz_data['macros']['carbs']}g
-- Fats: {quiz_data['macros']['fats']}g
-
-Training Plan: {quiz_data['training_plan']}
-
-Stay consistent. Results take time.
-
-- Tharun
-"""
-    msg.attach(MIMEText(body, "plain"))
-    pdf_attachment = MIMEBase("application", "octet-stream")
-    pdf_attachment.set_payload(pdf_buffer.read())
-    encoders.encode_base64(pdf_attachment)
-    pdf_attachment.add_header("Content-Disposition", "attachment", filename="365_Days_of_Discipline.pdf")
-    msg.attach(pdf_attachment)
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
-        server.login(SMTP_EMAIL, SMTP_PASSWORD)
-        server.sendmail(SMTP_EMAIL, email, msg.as_string())
+    pdf_b64 = base64.b64encode(pdf_buffer.read()).decode("utf-8")
+    m = quiz_data["macros"]
+    await send_emailjs({
+        "to_email": email,
+        "to_name": email.split("@")[0],
+        "calories": str(m["calories"]),
+        "protein": str(m["protein"]),
+        "carbs": str(m["carbs"]),
+        "fats": str(m["fats"]),
+        "training_plan": quiz_data.get("training_plan", ""),
+        "pdf_content": pdf_b64,
+    })
 
 
 # ===== ROUTES =====
@@ -395,7 +394,7 @@ async def root():
 async def health():
     return {
         "status": "ok",
-        "smtp_configured": bool(SMTP_PASSWORD),
+        "emailjs_configured": bool(EMAILJS_PUBLIC_KEY),
         "mongodb_configured": bool(MONGODB_URL)
     }
 
@@ -471,39 +470,23 @@ async def submit_payment(
         await save_payment(payment_id, payment_record)
         print(f"✅ Payment saved: {payment_id} for {email}")
 
-        if SMTP_PASSWORD:
-            try:
-                msg = MIMEMultipart()
-                msg["From"] = SMTP_EMAIL
-                msg["To"] = NOTIFY_EMAIL
-                msg["Subject"] = f"💰 New Payment - {email}"
-                a = quiz_data["answers"]
-                m = quiz_data["macros"]
-                body = f"""New payment received!
-
-Customer Email: {email}
-Payment ID: {payment_id}
-Time: {datetime.now().strftime('%d %b %Y %H:%M')}
-
-Stats:
-- Age: {a.get('age')} | Weight: {a.get('weight')}kg | Goal: {a.get('goal')}
-- Calories: {m['calories']} kcal | Protein: {m['protein']}g
-
-To APPROVE and send PDF, visit:
-https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}
-
-Payment screenshot attached."""
-                msg.attach(MIMEText(body, "plain"))
-                img_part = MIMEImage(screenshot_data)
-                img_part.add_header("Content-Disposition", "attachment",
-                                    filename=f"payment_{payment_id[:8]}.jpg")
-                msg.attach(img_part)
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
-                    server.login(SMTP_EMAIL, SMTP_PASSWORD)
-                    server.sendmail(SMTP_EMAIL, NOTIFY_EMAIL, msg.as_string())
-                print(f"✅ Admin notified at {NOTIFY_EMAIL}")
-            except Exception as e:
-                print(f"⚠️ Admin email failed (payment still saved): {e}")
+        try:
+            a = quiz_data["answers"]
+            m = quiz_data["macros"]
+            approve_link = f"https://workout-cwle.onrender.com/api/admin/approve/{payment_id}?secret={ADMIN_SECRET}"
+            await send_emailjs({
+                "to_email": NOTIFY_EMAIL,
+                "customer_email": email,
+                "payment_id": payment_id,
+                "time": datetime.now().strftime('%d %b %Y %H:%M'),
+                "goal": a.get('goal', ''),
+                "calories": str(m['calories']),
+                "protein": str(m['protein']),
+                "approve_link": approve_link,
+            })
+            print(f"✅ Admin notified at {NOTIFY_EMAIL}")
+        except Exception as e:
+            print(f"⚠️ Admin email failed (payment still saved): {e}")
 
         return {
             "status": "success",
@@ -546,7 +529,7 @@ async def approve_payment(payment_id: str, secret: str):
 
     await update_payment_status(payment_id, "approved")
     try:
-        send_pdf_email(email, quiz_data)
+        await send_pdf_email(email, quiz_data)
         print(f"✅ PDF sent to {email}")
         return {"status": "success", "message": f"✅ PDF sent to {email} successfully!"}
     except Exception as e:

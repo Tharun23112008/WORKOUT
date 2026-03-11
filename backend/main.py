@@ -23,7 +23,8 @@ ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
 
 # EmailJS config (HTTP-based, works on Render free tier)
 EMAILJS_SERVICE_ID = os.environ.get("EMAILJS_SERVICE_ID", "service_y3p7954")
-EMAILJS_TEMPLATE_ID = os.environ.get("EMAILJS_TEMPLATE_ID", "template_dmwir7u")
+EMAILJS_ADMIN_TEMPLATE_ID = os.environ.get("EMAILJS_ADMIN_TEMPLATE_ID", "template_dmwir7u")
+EMAILJS_PDF_TEMPLATE_ID = os.environ.get("EMAILJS_PDF_TEMPLATE_ID", "template_ecu877b")
 EMAILJS_PUBLIC_KEY = os.environ.get("EMAILJS_PUBLIC_KEY", "c3EPeMlWCA9fJbKtq")
 
 app = FastAPI()
@@ -350,11 +351,11 @@ def generate_pdf(answers, macros, user_email):
     return buffer
 
 
-async def send_emailjs(template_params: dict):
+async def send_emailjs(template_params: dict, template_id: str = None):
     """Send email via EmailJS HTTP API — works on Render free tier."""
     payload = {
         "service_id": EMAILJS_SERVICE_ID,
-        "template_id": EMAILJS_TEMPLATE_ID,
+        "template_id": template_id or EMAILJS_ADMIN_TEMPLATE_ID,
         "user_id": EMAILJS_PUBLIC_KEY,
         "template_params": template_params
     }
@@ -382,7 +383,7 @@ async def send_pdf_email(email: str, quiz_data: dict):
         "fats": str(m["fats"]),
         "training_plan": quiz_data.get("training_plan", ""),
         "pdf_content": pdf_b64,
-    })
+    }, template_id=EMAILJS_PDF_TEMPLATE_ID)
 
 
 # ===== ROUTES =====

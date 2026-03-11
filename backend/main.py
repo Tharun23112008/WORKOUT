@@ -35,7 +35,6 @@ EMAILJS_PRIVATE_KEY    = os.environ.get("EMAILJS_PRIVATE_KEY",     "")
 CLOUDINARY_CLOUD       = os.environ.get("CLOUDINARY_CLOUD_NAME",   "datg4264x")
 CLOUDINARY_API_KEY     = os.environ.get("CLOUDINARY_API_KEY",      "638337381561993")
 CLOUDINARY_API_SECRET  = os.environ.get("CLOUDINARY_API_SECRET",   "3wQLyZCGp66Ry0v71fJCl1nurBg")
-MONGODB_URL            = os.environ.get("MONGODB_URL",             "")
 
 # ===== APP =====
 app = FastAPI()
@@ -45,123 +44,80 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# ===== MONGODB DATA API STORE (HTTP-based, no SSL socket issues) =====
-# Get these from Atlas -> Data API -> Enable -> Create API Key
-MONGO_DATA_API_URL = os.environ.get("MONGO_DATA_API_URL", "")
-MONGO_DATA_API_KEY = os.environ.get("MONGO_DATA_API_KEY", "")
-MONGO_DB           = "discipline365"
+# ===== PERSISTENT STORE (SQLite) =====
+# SQLite is built into Python — no dependencies, survives redeploys on Render disk
+import sqlite3
+
+DB_PATH = "/opt/render/project/src/discipline365.db"
+
+def _get_conn():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 @app.on_event("startup")
 async def startup_db():
-    if MONGO_DATA_API_URL and MONGO_DATA_API_KEY:
-        print("✅ MongoDB Data API configured")
-    else:
-        print("WARNING: No MongoDB Data API configured — using /tmp fallback")
-
-async def _mongo_request(action: str, collection: str, body: dict) -> dict:
-    """Make a request to MongoDB Atlas Data API over HTTPS."""
-    url = f"{MONGO_DATA_API_URL}/action/{action}"
-    payload = {
-        "dataSource": "Cluster0",
-        "database":   MONGO_DB,
-        "collection": collection,
-        **body,
-    }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            url,
-            json=payload,
-            headers={
-                "Content-Type": "application/json",
-                "api-key":      MONGO_DATA_API_KEY,
-            },
+    conn = _get_conn()
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS quizzes (
+            quiz_id TEXT PRIMARY KEY,
+            data    TEXT NOT NULL
         )
-        if resp.status_code not in (200, 201):
-            raise Exception(f"MongoDB API error {resp.status_code}: {resp.text}")
-        return resp.json()
-
-def _use_mongo() -> bool:
-    return bool(MONGO_DATA_API_URL and MONGO_DATA_API_KEY)
-
-# ── /tmp fallback ─────────────────────────────────────────────────────
-STORE_FILE = Path("/tmp/store.json")
-
-def _load_store() -> dict:
-    try:
-        if STORE_FILE.exists():
-            return json.loads(STORE_FILE.read_text())
-    except Exception:
-        pass
-    return {}
-
-def _save_store(store: dict):
-    try:
-        STORE_FILE.write_text(json.dumps(store))
-    except Exception:
-        pass
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS payments (
+            payment_id TEXT PRIMARY KEY,
+            data       TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+    print("✅ SQLite database ready")
 
 # ── Store helpers ─────────────────────────────────────────────────────
 async def save_quiz(quiz_id: str, data: dict):
-    if _use_mongo():
-        await _mongo_request("updateOne", "quizzes", {
-            "filter": {"quiz_id": quiz_id},
-            "update": {"$set": {"quiz_id": quiz_id, **data}},
-            "upsert": True,
-        })
-    else:
-        store = _load_store(); store[quiz_id] = data; _save_store(store)
+    conn = _get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO quizzes (quiz_id, data) VALUES (?, ?)",
+        (quiz_id, json.dumps(data))
+    )
+    conn.commit(); conn.close()
 
 async def get_quiz(quiz_id: str):
-    if _use_mongo():
-        result = await _mongo_request("findOne", "quizzes", {"filter": {"quiz_id": quiz_id}})
-        doc = result.get("document")
-        if doc:
-            doc.pop("_id", None)
-            doc.pop("quiz_id", None)
-            return doc
-        return None
-    return _load_store().get(quiz_id)
+    conn = _get_conn()
+    row = conn.execute("SELECT data FROM quizzes WHERE quiz_id = ?", (quiz_id,)).fetchone()
+    conn.close()
+    return json.loads(row["data"]) if row else None
 
 async def save_payment(payment_id: str, data: dict):
-    if _use_mongo():
-        await _mongo_request("updateOne", "payments", {
-            "filter": {"payment_id": payment_id},
-            "update": {"$set": data},
-            "upsert": True,
-        })
-    else:
-        store = _load_store(); store[f"payment_{payment_id}"] = data; _save_store(store)
+    conn = _get_conn()
+    conn.execute(
+        "INSERT OR REPLACE INTO payments (payment_id, data) VALUES (?, ?)",
+        (payment_id, json.dumps(data))
+    )
+    conn.commit(); conn.close()
 
 async def get_all_payments():
-    if _use_mongo():
-        result = await _mongo_request("find", "payments", {"filter": {}})
-        docs = result.get("documents", [])
-        for d in docs: d.pop("_id", None)
-        return docs
-    store = _load_store()
-    return [v for k, v in store.items() if k.startswith("payment_")]
+    conn = _get_conn()
+    rows = conn.execute("SELECT data FROM payments").fetchall()
+    conn.close()
+    return [json.loads(r["data"]) for r in rows]
 
 async def update_payment_status(payment_id: str, status: str):
-    if _use_mongo():
-        await _mongo_request("updateOne", "payments", {
-            "filter": {"payment_id": payment_id},
-            "update": {"$set": {"status": status}},
-        })
-    else:
-        store = _load_store()
-        key = f"payment_{payment_id}"
-        if key in store:
-            store[key]["status"] = status; _save_store(store)
+    conn = _get_conn()
+    row = conn.execute("SELECT data FROM payments WHERE payment_id = ?", (payment_id,)).fetchone()
+    if row:
+        data = json.loads(row["data"])
+        data["status"] = status
+        conn.execute("UPDATE payments SET data = ? WHERE payment_id = ?", (json.dumps(data), payment_id))
+        conn.commit()
+    conn.close()
 
 async def get_payment(payment_id: str):
-    if _use_mongo():
-        result = await _mongo_request("findOne", "payments", {"filter": {"payment_id": payment_id}})
-        doc = result.get("document")
-        if doc:
-            doc.pop("_id", None)
-            return doc
-        return None
-    return _load_store().get(f"payment_{payment_id}")
+    conn = _get_conn()
+    row = conn.execute("SELECT data FROM payments WHERE payment_id = ?", (payment_id,)).fetchone()
+    conn.close()
+    return json.loads(row["data"]) if row else None
 
 # ===== MODELS =====
 class QuizAnswers(BaseModel):
@@ -667,33 +623,26 @@ async def send_emailjs(template_params: dict, template_id: str = None):
 async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str:
     """Upload PDF to Cloudinary and return a direct download URL."""
     timestamp = str(int(time_module.time()))
-    # Use filename without .pdf extension as public_id (Cloudinary strips it anyway)
-    public_id = f"365discipline/{filename.replace('.pdf', '')}"
-    # resource_type=raw must be included in signature params
-    params_str = f"public_id={public_id}&resource_type=raw&timestamp={timestamp}"
-    signature = hashlib.sha1(
-        f"{params_str}{CLOUDINARY_API_SECRET}".encode()
-    ).hexdigest()
-    pdf_bytes = pdf_buffer.read()
+    public_id  = f"365discipline/{filename.replace('.pdf', '')}"
+    # Signature params must be alphabetically sorted and match EXACTLY what is sent in the request
+    # We only send public_id + timestamp — resource_type is NOT included (it is in the URL path)
+    params_str = f"public_id={public_id}&timestamp={timestamp}"
+    signature  = hashlib.sha1(f"{params_str}{CLOUDINARY_API_SECRET}".encode()).hexdigest()
+    pdf_bytes  = pdf_buffer.read()
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/raw/upload",
             data={
-                "public_id":     public_id,
-                "resource_type": "raw",
-                "timestamp":     timestamp,
-                "api_key":       CLOUDINARY_API_KEY,
-                "signature":     signature,
+                "public_id": public_id,
+                "timestamp": timestamp,
+                "api_key":   CLOUDINARY_API_KEY,
+                "signature": signature,
             },
             files={"file": (filename, pdf_bytes, "application/pdf")},
         )
         if resp.status_code != 200:
             raise Exception(f"Cloudinary upload failed: {resp.text}")
-        url = resp.json()["secure_url"]
-        # Ensure URL ends with .pdf so browsers recognise it
-        if not url.endswith(".pdf"):
-            url = url + ".pdf"
-        return url
+        return resp.json()["secure_url"]
 
 
 async def send_pdf_email(email: str, quiz_data: dict):

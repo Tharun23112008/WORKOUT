@@ -6,12 +6,16 @@ import { Button } from '../components/ui/button';
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'https://workout-cwle.onrender.com';
 const API = `${BACKEND_URL}/api`;
 
+// FIX: Max file size 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
 export const Results = ({ results, quizId }) => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentScreenshot, setPaymentScreenshot] = useState(null);
   const [paymentStatus, setPaymentStatus] = useState('pending');
   const [userEmail, setUserEmail] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     if (showPaymentModal) {
@@ -33,22 +37,57 @@ export const Results = ({ results, quizId }) => {
     };
   }, [showPaymentModal]);
 
-  const handleUnlock = () => setShowPaymentModal(true);
+  // FIX: reset state when modal is closed so user can retry cleanly
+  const handleCloseModal = () => {
+    setShowPaymentModal(false);
+    // Only reset if not in success state
+    if (paymentStatus !== 'success') {
+      setPaymentStatus('pending');
+      setSubmitError('');
+    }
+  };
+
+  const handleUnlock = () => {
+    setPaymentStatus('pending');
+    setSubmitError('');
+    setShowPaymentModal(true);
+  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
-    if (file) setPaymentScreenshot(file);
+    if (!file) return;
+
+    // FIX: validate file type
+    if (!file.type.startsWith('image/')) {
+      setSubmitError('Please upload an image file (JPG, PNG, etc.)');
+      return;
+    }
+
+    // FIX: validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      setSubmitError('File too large. Please upload an image under 10MB.');
+      return;
+    }
+
+    setSubmitError('');
+    setPaymentScreenshot(file);
   };
 
   const validateEmail = (email) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 
   const handleSubmitPayment = async () => {
+    setSubmitError('');
+
     if (!validateEmail(userEmail)) {
-      setEmailError('Enter a valid email');
+      setEmailError('Enter a valid email address');
       return;
     }
     if (!paymentScreenshot) {
-      alert('Please upload payment screenshot');
+      setSubmitError('Please upload your payment screenshot');
+      return;
+    }
+    if (!quizId) {
+      setSubmitError('Quiz session expired. Please go back and retake the quiz.');
       return;
     }
 
@@ -65,10 +104,22 @@ export const Results = ({ results, quizId }) => {
         body: formData,
       });
 
-      if (!res.ok) throw new Error('Server error');
+      // FIX: parse error detail from server response
+      if (!res.ok) {
+        let errorMsg = 'Payment submission failed. Please try again.';
+        try {
+          const errData = await res.json();
+          if (errData.detail) errorMsg = errData.detail;
+        } catch (_) {}
+        setSubmitError(errorMsg);
+        setPaymentStatus('pending');
+        return;
+      }
+
       setPaymentStatus('success');
     } catch (err) {
-      alert('Payment submission failed. Please try again.');
+      // FIX: network error (offline, server down)
+      setSubmitError('Could not reach the server. Check your connection and try again.');
       setPaymentStatus('pending');
     }
   };
@@ -197,7 +248,7 @@ export const Results = ({ results, quizId }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-3 sm:p-6"
-            onClick={() => setShowPaymentModal(false)}
+            onClick={handleCloseModal}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
@@ -208,7 +259,7 @@ export const Results = ({ results, quizId }) => {
             >
               {/* X Button */}
               <button
-                onClick={() => setShowPaymentModal(false)}
+                onClick={handleCloseModal}
                 className="absolute top-4 right-4 sm:top-6 sm:right-6 z-20 glass-morphism p-2 rounded-full hover:glass-morphism-strong transition-all"
               >
                 <X className="w-5 h-5 sm:w-6 sm:h-6 text-white" />
@@ -227,12 +278,22 @@ export const Results = ({ results, quizId }) => {
                 </div>
 
                 {/* QR Code */}
+                {/* 
+                  ⚠️  ACTION REQUIRED: Replace the src below with your own hosted QR image.
+                  The current URL (emergentagent CDN) is temporary and WILL break.
+                  Upload your QR image to your repo's /public folder and use: src="/qr-code.jpg"
+                */}
                 <div className="flex justify-center mb-6 sm:mb-8">
                   <div className="glass-morphism-strong p-3 sm:p-6 rounded-2xl sm:rounded-3xl glow-gradient">
                     <img
-                      src="https://customer-assets.emergentagent.com/job_fitpro-quiz/artifacts/uo7mdy9q_Screenshot_2026-03-03-16-10-35-33_ba41e9a642e6e0e2b03656bfbbffd6e4.jpg"
-                      alt="FamPay QR Code"
+                      src="/qr-code.jpg"
+                      alt="UPI QR Code"
                       className="w-48 h-48 sm:w-64 sm:h-64 object-contain rounded-xl sm:rounded-2xl"
+                      onError={(e) => {
+                        // FIX: graceful fallback if image fails to load
+                        e.target.style.display = 'none';
+                        e.target.parentElement.innerHTML = '<p class="text-muted-foreground text-sm text-center p-8">QR code unavailable.<br/>Use the UPI ID below.</p>';
+                      }}
                     />
                   </div>
                 </div>
@@ -246,7 +307,9 @@ export const Results = ({ results, quizId }) => {
                 {/* Email + Upload */}
                 {paymentStatus === 'pending' && (
                   <div className="glass-morphism rounded-2xl p-5 sm:p-8">
-                    <p className="text-xs sm:text-sm text-muted-foreground mb-3 font-semibold text-white">Your Email Address <span className="text-primary">*</span></p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-3 font-semibold text-white">
+                      Your Email Address <span className="text-primary">*</span>
+                    </p>
                     <input
                       type="email"
                       placeholder="your@email.com"
@@ -255,11 +318,21 @@ export const Results = ({ results, quizId }) => {
                       className="w-full glass-morphism rounded-xl px-4 py-3 text-white text-sm sm:text-base mb-1 outline-none border border-white/10 focus:border-primary/50"
                     />
                     {emailError && <p className="text-red-400 text-xs mb-3">{emailError}</p>}
-                    <p className="text-xs text-muted-foreground mb-4 mt-1">We'll send your personalized PDF to this email after payment verification</p>
+                    <p className="text-xs text-muted-foreground mb-4 mt-1">
+                      We'll send your personalized PDF to this email after payment verification
+                    </p>
 
-                    <p className="text-xs sm:text-sm text-muted-foreground mb-3 font-semibold text-white">Upload Payment Screenshot</p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mb-3 font-semibold text-white">
+                      Upload Payment Screenshot
+                    </p>
                     <div className="flex flex-col items-center gap-3 sm:gap-4">
-                      <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" id="payment-screenshot" />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleFileUpload}
+                        className="hidden"
+                        id="payment-screenshot"
+                      />
                       <label
                         htmlFor="payment-screenshot"
                         className="glass-morphism-strong rounded-full px-6 sm:px-8 py-3 sm:py-4 cursor-pointer hover:glass-morphism transition-all flex items-center gap-3 w-full justify-center"
@@ -269,6 +342,12 @@ export const Results = ({ results, quizId }) => {
                           {paymentScreenshot ? paymentScreenshot.name : 'Choose Screenshot'}
                         </span>
                       </label>
+
+                      {/* FIX: show file/submit error inline instead of alert() */}
+                      {submitError && (
+                        <p className="text-red-400 text-xs text-center w-full">{submitError}</p>
+                      )}
+
                       {paymentScreenshot && (
                         <Button
                           onClick={handleSubmitPayment}
@@ -284,7 +363,7 @@ export const Results = ({ results, quizId }) => {
                 {paymentStatus === 'uploading' && (
                   <div className="text-center py-6 sm:py-8">
                     <div className="animate-spin rounded-full h-10 w-10 sm:h-12 sm:w-12 border-t-2 border-b-2 border-primary mx-auto mb-4"></div>
-                    <p className="text-muted-foreground text-sm sm:text-base">Submitting...</p>
+                    <p className="text-muted-foreground text-sm sm:text-base">Submitting your payment...</p>
                   </div>
                 )}
 
@@ -294,8 +373,12 @@ export const Results = ({ results, quizId }) => {
                       <CheckCircle2 className="w-8 h-8 sm:w-10 sm:h-10 text-white" />
                     </div>
                     <p className="text-lg sm:text-xl font-bold text-white mb-2">Payment Submitted!</p>
-                    <p className="text-sm sm:text-base text-muted-foreground">Check your email: <span className="text-white font-semibold">{userEmail}</span></p>
-                    <p className="text-xs text-muted-foreground mt-2">You'll receive your personalized PDF within 24 hours after verification</p>
+                    <p className="text-sm sm:text-base text-muted-foreground">
+                      Check your email: <span className="text-white font-semibold">{userEmail}</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      You'll receive your personalized PDF within 24 hours after verification
+                    </p>
                   </div>
                 )}
               </div>

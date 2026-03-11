@@ -14,9 +14,6 @@ import httpx
 from datetime import datetime
 from pathlib import Path
 
-# MongoDB
-from motor.motor_asyncio import AsyncIOMotorClient
-
 # ReportLab
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -48,23 +45,45 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# ===== MONGODB STORE =====
-_db = None
-
-def _get_db():
-    return _db
+# ===== MONGODB DATA API STORE (HTTP-based, no SSL socket issues) =====
+# Get these from Atlas -> Data API -> Enable -> Create API Key
+MONGO_DATA_API_URL = os.environ.get("MONGO_DATA_API_URL", "")
+MONGO_DATA_API_KEY = os.environ.get("MONGO_DATA_API_KEY", "")
+MONGO_DB           = "discipline365"
 
 @app.on_event("startup")
 async def startup_db():
-    global _db
-    if MONGODB_URL:
-        client = AsyncIOMotorClient(MONGODB_URL)
-        _db = client["discipline365"]
-        print("Connected to MongoDB Atlas")
+    if MONGO_DATA_API_URL and MONGO_DATA_API_KEY:
+        print("✅ MongoDB Data API configured")
     else:
-        print("WARNING: No MONGODB_URL set — falling back to /tmp store")
+        print("WARNING: No MongoDB Data API configured — using /tmp fallback")
 
-# ── /tmp fallback (used only if MongoDB not configured) ──────────────
+async def _mongo_request(action: str, collection: str, body: dict) -> dict:
+    """Make a request to MongoDB Atlas Data API over HTTPS."""
+    url = f"{MONGO_DATA_API_URL}/action/{action}"
+    payload = {
+        "dataSource": "Cluster0",
+        "database":   MONGO_DB,
+        "collection": collection,
+        **body,
+    }
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            url,
+            json=payload,
+            headers={
+                "Content-Type": "application/json",
+                "api-key":      MONGO_DATA_API_KEY,
+            },
+        )
+        if resp.status_code not in (200, 201):
+            raise Exception(f"MongoDB API error {resp.status_code}: {resp.text}")
+        return resp.json()
+
+def _use_mongo() -> bool:
+    return bool(MONGO_DATA_API_URL and MONGO_DATA_API_KEY)
+
+# ── /tmp fallback ─────────────────────────────────────────────────────
 STORE_FILE = Path("/tmp/store.json")
 
 def _load_store() -> dict:
@@ -81,16 +100,21 @@ def _save_store(store: dict):
     except Exception:
         pass
 
-# ── Store helpers (MongoDB preferred, /tmp fallback) ─────────────────
+# ── Store helpers ─────────────────────────────────────────────────────
 async def save_quiz(quiz_id: str, data: dict):
-    if _db is not None:
-        await _db.quizzes.replace_one({"quiz_id": quiz_id}, {"quiz_id": quiz_id, **data}, upsert=True)
+    if _use_mongo():
+        await _mongo_request("updateOne", "quizzes", {
+            "filter": {"quiz_id": quiz_id},
+            "update": {"$set": {"quiz_id": quiz_id, **data}},
+            "upsert": True,
+        })
     else:
         store = _load_store(); store[quiz_id] = data; _save_store(store)
 
 async def get_quiz(quiz_id: str):
-    if _db is not None:
-        doc = await _db.quizzes.find_one({"quiz_id": quiz_id})
+    if _use_mongo():
+        result = await _mongo_request("findOne", "quizzes", {"filter": {"quiz_id": quiz_id}})
+        doc = result.get("document")
         if doc:
             doc.pop("_id", None)
             doc.pop("quiz_id", None)
@@ -99,25 +123,30 @@ async def get_quiz(quiz_id: str):
     return _load_store().get(quiz_id)
 
 async def save_payment(payment_id: str, data: dict):
-    if _db is not None:
-        await _db.payments.replace_one({"payment_id": payment_id}, data, upsert=True)
+    if _use_mongo():
+        await _mongo_request("updateOne", "payments", {
+            "filter": {"payment_id": payment_id},
+            "update": {"$set": data},
+            "upsert": True,
+        })
     else:
         store = _load_store(); store[f"payment_{payment_id}"] = data; _save_store(store)
 
 async def get_all_payments():
-    if _db is not None:
-        cursor = _db.payments.find({})
-        payments = []
-        async for doc in cursor:
-            doc.pop("_id", None)
-            payments.append(doc)
-        return payments
+    if _use_mongo():
+        result = await _mongo_request("find", "payments", {"filter": {}})
+        docs = result.get("documents", [])
+        for d in docs: d.pop("_id", None)
+        return docs
     store = _load_store()
     return [v for k, v in store.items() if k.startswith("payment_")]
 
 async def update_payment_status(payment_id: str, status: str):
-    if _db is not None:
-        await _db.payments.update_one({"payment_id": payment_id}, {"$set": {"status": status}})
+    if _use_mongo():
+        await _mongo_request("updateOne", "payments", {
+            "filter": {"payment_id": payment_id},
+            "update": {"$set": {"status": status}},
+        })
     else:
         store = _load_store()
         key = f"payment_{payment_id}"
@@ -125,8 +154,9 @@ async def update_payment_status(payment_id: str, status: str):
             store[key]["status"] = status; _save_store(store)
 
 async def get_payment(payment_id: str):
-    if _db is not None:
-        doc = await _db.payments.find_one({"payment_id": payment_id})
+    if _use_mongo():
+        result = await _mongo_request("findOne", "payments", {"filter": {"payment_id": payment_id}})
+        doc = result.get("document")
         if doc:
             doc.pop("_id", None)
             return doc

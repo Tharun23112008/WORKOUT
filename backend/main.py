@@ -6,6 +6,7 @@ import uuid
 import smtplib
 import os
 import io
+import traceback
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -39,9 +40,15 @@ db = None
 async def startup_db():
     global db_client, db
     if MONGODB_URL:
-        db_client = AsyncIOMotorClient(MONGODB_URL)
-        db = db_client["workout365"]
-        print("✅ MongoDB connected")
+        try:
+            db_client = AsyncIOMotorClient(MONGODB_URL, serverSelectionTimeoutMS=5000)
+            db = db_client["workout365"]
+            # Force a real connection check
+            await db_client.admin.command("ping")
+            print("✅ MongoDB connected")
+        except Exception as e:
+            print(f"❌ MongoDB connection failed: {e}")
+            db = None
     else:
         print("⚠️ No MONGODB_URL — falling back to in-memory store")
 
@@ -73,7 +80,7 @@ async def get_all_payments():
         cursor = db.payments.find({})
         docs = await cursor.to_list(length=100)
         for doc in docs:
-            doc.pop("_id", None)  # FIX: remove _id here too
+            doc.pop("_id", None)
         return docs
     return [v for k, v in quiz_store.items() if k.startswith("payment_")]
 
@@ -141,7 +148,6 @@ def calculate_macros(answers):
     protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
     protein = int(answers.weight * protein_per_kg)
 
-    # FIX: normalize dietary_preference before comparison
     diet = answers.dietary_preference.lower().strip()
     if diet == "vegetarian":
         protein = int(protein * 0.95)
@@ -295,9 +301,7 @@ def generate_pdf(answers, macros, user_email):
 
     story.append(Paragraph("NUTRITION GUIDE", heading_style))
 
-    # FIX: normalize diet string — lowercase + strip + handle both spellings
     diet = answers.get("dietary_preference", "non_vegetarian").lower().strip()
-    # Treat "eggetarian" and "eggitarian" as the same
     if diet in ("eggetarian", "eggitarian"):
         diet = "eggetarian"
 
@@ -387,7 +391,6 @@ def generate_pdf(answers, macros, user_email):
 
 
 def send_pdf_email(email: str, quiz_data: dict):
-    """Send PDF blueprint to customer email."""
     if not SMTP_PASSWORD:
         raise ValueError("SMTP_APP_PASSWORD environment variable is not set. Cannot send email.")
 
@@ -419,7 +422,6 @@ Stay consistent. Results take time.
     pdf_attachment.add_header("Content-Disposition", "attachment", filename="365_Days_of_Discipline.pdf")
     msg.attach(pdf_attachment)
 
-    # FIX: explicit timeout to prevent hanging forever
     with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.sendmail(SMTP_EMAIL, email, msg.as_string())
@@ -441,7 +443,16 @@ async def health():
 @app.post("/api/quiz/submit", response_model=QuizResponse)
 async def submit_quiz(answers: QuizAnswers):
     try:
-        macros = calculate_macros(answers)
+        print(f"📥 Received: age={answers.age} weight={answers.weight} height={answers.height} gender={answers.gender} goal={answers.goal} days={answers.training_days} diet={answers.dietary_preference}")
+
+        try:
+            macros = calculate_macros(answers)
+            print(f"✅ Macros OK: {macros}")
+        except Exception as e:
+            print(f"❌ CRASH in calculate_macros: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Macro calculation failed: {str(e)}")
+
         quiz_id = str(uuid.uuid4())
         training_plan = get_training_plan(answers.training_days, answers.experience_level)
         data = {
@@ -450,11 +461,30 @@ async def submit_quiz(answers: QuizAnswers):
             "training_plan": training_plan,
             "created_at": datetime.now().isoformat()
         }
-        await save_quiz(quiz_id, data)
-        return QuizResponse(quiz_id=quiz_id, calories=macros["calories"],
-                            protein=macros["protein"], training_plan=training_plan)
+
+        try:
+            await save_quiz(quiz_id, data)
+            print(f"✅ Saved quiz: {quiz_id}")
+        except Exception as e:
+            print(f"❌ CRASH in save_quiz: {e}")
+            traceback.print_exc()
+            raise HTTPException(status_code=500, detail=f"Database save failed: {str(e)}")
+
+        print(f"✅ Done — returning quiz_id={quiz_id}")
+        return QuizResponse(
+            quiz_id=quiz_id,
+            calories=macros["calories"],
+            protein=macros["protein"],
+            training_plan=training_plan
+        )
+
+    except HTTPException:
+        raise
     except Exception as e:
+        print(f"❌ UNEXPECTED CRASH in submit_quiz: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/api/payment/submit")
 async def submit_payment(
@@ -463,13 +493,11 @@ async def submit_payment(
     screenshot: UploadFile = File(...)
 ):
     try:
-        # FIX: validate file is an image
         if screenshot.content_type and not screenshot.content_type.startswith("image/"):
             raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
 
         screenshot_data = await screenshot.read()
 
-        # FIX: validate file size (max 10MB)
         if len(screenshot_data) > 10 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="Screenshot file too large. Max 10MB.")
 
@@ -488,7 +516,6 @@ async def submit_payment(
         }
         await save_payment(payment_id, payment_record)
 
-        # Notify admin with screenshot
         if SMTP_PASSWORD:
             try:
                 msg = MIMEMultipart()
@@ -524,20 +551,21 @@ Payment screenshot attached."""
                     server.login(SMTP_EMAIL, SMTP_PASSWORD)
                     server.sendmail(SMTP_EMAIL, NOTIFY_EMAIL, msg.as_string())
             except Exception as e:
-                # FIX: log the error but don't crash — payment is saved, admin can still approve manually
                 print(f"⚠️ Admin notification email failed: {e}")
         else:
             print("⚠️ SMTP_APP_PASSWORD not set — skipping admin email notification")
 
         return {
             "status": "success",
-            "payment_id": payment_id,  # FIX: return payment_id so frontend can reference it
+            "payment_id": payment_id,
             "message": "Payment submitted. You'll receive your PDF within 24 hours after verification."
         }
 
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ CRASH in submit_payment: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -578,7 +606,6 @@ async def approve_payment(payment_id: str, secret: str):
     if not quiz_data:
         raise HTTPException(status_code=404, detail="Quiz data not found. Cannot generate PDF.")
 
-    # FIX: update status BEFORE sending to prevent double-send on retry
     await update_payment_status(payment_id, "approved")
 
     try:
@@ -588,6 +615,6 @@ async def approve_payment(payment_id: str, secret: str):
             "message": f"✅ PDF sent to {email} successfully!"
         }
     except Exception as e:
-        # FIX: revert status if send failed so admin can retry
         await update_payment_status(payment_id, "send_failed")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Payment approved but PDF failed to send: {str(e)}. Check SMTP settings.")

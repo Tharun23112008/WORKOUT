@@ -585,18 +585,16 @@ async def send_emailjs(template_params: dict, template_id: str = None):
 
 
 async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str:
-    """Upload PDF to Cloudinary and return a working download URL."""
-    
+    """Upload PDF to Cloudinary and return a download URL."""
+
     timestamp = str(int(time_module.time()))
     public_id = f"365discipline/{filename}"
 
-    # Cloudinary signature
     params_str = f"public_id={public_id}&timestamp={timestamp}"
     signature = hashlib.sha1(
         f"{params_str}{CLOUDINARY_API_SECRET}".encode()
     ).hexdigest()
 
-    # Convert PDF to base64
     pdf_b64 = base64.b64encode(pdf_buffer.read()).decode("utf-8")
     data_uri = f"data:application/pdf;base64,{pdf_b64}"
 
@@ -609,7 +607,7 @@ async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str
                 "timestamp": timestamp,
                 "api_key": CLOUDINARY_API_KEY,
                 "signature": signature,
-            },
+            }
         )
 
         if resp.status_code != 200:
@@ -617,55 +615,18 @@ async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str
 
         secure_url = resp.json()["secure_url"]
 
-        # FIXED DOWNLOAD LINK
+        # convert to download link
         download_url = secure_url.replace(
             "/raw/upload/",
             "/raw/upload/fl_attachment/"
         )
 
-        return download_url    """Upload PDF to Cloudinary, return a browser-friendly download URL."""
-    timestamp  = str(int(time_module.time()))
-    public_id  = f"365discipline/{filename}"
-
-    # Signature must include params in alphabetical order
-    params_str = f"public_id={public_id}&timestamp={timestamp}"
-    signature  = hashlib.sha1(f"{params_str}{CLOUDINARY_API_SECRET}".encode()).hexdigest()
-
-    pdf_b64  = base64.b64encode(pdf_buffer.read()).decode("utf-8")
-    data_uri = f"data:application/pdf;base64,{pdf_b64}"
-
-    async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/raw/upload",
-            data={
-                "file":      data_uri,
-                "public_id": public_id,
-                "timestamp": timestamp,
-                "api_key":   CLOUDINARY_API_KEY,
-                "signature": signature,
-            }
-        )
-        if resp.status_code != 200:
-            raise Exception(f"Cloudinary upload failed: {resp.text}")
-
-        secure_url = resp.json()["secure_url"]
-
-        # Force browser to treat the file as a downloadable PDF.
-        # Cloudinary raw uploads don't set Content-Type automatically,
-        # so we append fl_attachment to trigger a proper download.
-        # Replace the base URL part to inject the transformation flag.
-        download_url = secure_url.replace(
-            "/raw/upload/",
-            "/raw/upload/fl_attachment:" + filename.replace(".pdf", "") + "/"
-        )
         return download_url
-
 
 async def send_pdf_email(email: str, quiz_data: dict):
     """Generate PDF, upload to Cloudinary, send link via EmailJS."""
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
-    email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_')
-    filename     = f"365_discipline_{email_prefix}_{uuid.uuid4().hex[:8]}.pdf"
+    filename   = f"365_discipline_{email.split('@')[0]}_{uuid.uuid4().hex[:8]}.pdf"
     pdf_url    = await upload_pdf_to_cloudinary(pdf_buffer, filename)
 
     m = quiz_data["macros"]

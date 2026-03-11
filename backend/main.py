@@ -37,31 +37,54 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===== IN-MEMORY STORE =====
-# MongoDB disabled due to SSL incompatibility on Render Python 3.14
-# All data lives in memory — works perfectly for quiz/payment/approval flow
-quiz_store = {}
+# ===== FILE-BASED PERSISTENT STORE =====
+import json
+from pathlib import Path
+
+STORE_FILE = Path("/tmp/store.json")
+
+def _load_store() -> dict:
+    try:
+        if STORE_FILE.exists():
+            return json.loads(STORE_FILE.read_text())
+    except Exception as e:
+        print(f"Could not load store: {e}")
+    return {}
+
+def _save_store(store: dict):
+    try:
+        STORE_FILE.write_text(json.dumps(store))
+    except Exception as e:
+        print(f"Could not save store: {e}")
 
 @app.on_event("startup")
 async def startup_db():
-    print("✅ Server started — using in-memory store")
+    store = _load_store()
+    print(f"Server started — store loaded with {len(store)} entries")
 
 async def save_quiz(quiz_id: str, data: dict):
-    quiz_store[quiz_id] = data
+    store = _load_store()
+    store[quiz_id] = data
+    _save_store(store)
 
 async def get_quiz(quiz_id: str):
-    return quiz_store.get(quiz_id)
+    return _load_store().get(quiz_id)
 
 async def save_payment(payment_id: str, data: dict):
-    quiz_store[f"payment_{payment_id}"] = data
+    store = _load_store()
+    store[f"payment_{payment_id}"] = data
+    _save_store(store)
 
 async def get_all_payments():
-    return [v for k, v in quiz_store.items() if k.startswith("payment_")]
+    store = _load_store()
+    return [v for k, v in store.items() if k.startswith("payment_")]
 
 async def update_payment_status(payment_id: str, status: str):
+    store = _load_store()
     key = f"payment_{payment_id}"
-    if key in quiz_store:
-        quiz_store[key]["status"] = status
+    if key in store:
+        store[key]["status"] = status
+        _save_store(store)
 
 # ===== MODELS =====
 class QuizAnswers(BaseModel):
@@ -517,7 +540,8 @@ async def approve_payment(payment_id: str, secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    payment = quiz_store.get(f"payment_{payment_id}")
+    store = _load_store()
+    payment = store.get(f"payment_{payment_id}")
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     if payment.get("status") == "approved":

@@ -14,6 +14,9 @@ import httpx
 from datetime import datetime
 from pathlib import Path
 
+# MongoDB
+from motor.motor_asyncio import AsyncIOMotorClient
+
 # ReportLab
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
@@ -35,6 +38,7 @@ EMAILJS_PRIVATE_KEY    = os.environ.get("EMAILJS_PRIVATE_KEY",     "")
 CLOUDINARY_CLOUD       = os.environ.get("CLOUDINARY_CLOUD_NAME",   "datg4264x")
 CLOUDINARY_API_KEY     = os.environ.get("CLOUDINARY_API_KEY",      "638337381561993")
 CLOUDINARY_API_SECRET  = os.environ.get("CLOUDINARY_API_SECRET",   "3wQLyZCGp66Ry0v71fJCl1nurBg")
+MONGODB_URL            = os.environ.get("MONGODB_URL",             "")
 
 # ===== APP =====
 app = FastAPI()
@@ -44,46 +48,90 @@ app.add_middleware(
     allow_methods=["*"], allow_headers=["*"],
 )
 
-# ===== PERSISTENT STORE =====
+# ===== MONGODB STORE =====
+_db = None
+
+def _get_db():
+    return _db
+
+@app.on_event("startup")
+async def startup_db():
+    global _db
+    if MONGODB_URL:
+        client = AsyncIOMotorClient(MONGODB_URL)
+        _db = client["discipline365"]
+        print("Connected to MongoDB Atlas")
+    else:
+        print("WARNING: No MONGODB_URL set — falling back to /tmp store")
+
+# ── /tmp fallback (used only if MongoDB not configured) ──────────────
 STORE_FILE = Path("/tmp/store.json")
 
 def _load_store() -> dict:
     try:
         if STORE_FILE.exists():
             return json.loads(STORE_FILE.read_text())
-    except Exception as e:
-        print(f"Could not load store: {e}")
+    except Exception:
+        pass
     return {}
 
 def _save_store(store: dict):
     try:
         STORE_FILE.write_text(json.dumps(store))
-    except Exception as e:
-        print(f"Could not save store: {e}")
+    except Exception:
+        pass
 
-@app.on_event("startup")
-async def startup_db():
-    store = _load_store()
-    print(f"Server started — store loaded with {len(store)} entries")
-
+# ── Store helpers (MongoDB preferred, /tmp fallback) ─────────────────
 async def save_quiz(quiz_id: str, data: dict):
-    store = _load_store(); store[quiz_id] = data; _save_store(store)
+    if _db is not None:
+        await _db.quizzes.replace_one({"quiz_id": quiz_id}, {"quiz_id": quiz_id, **data}, upsert=True)
+    else:
+        store = _load_store(); store[quiz_id] = data; _save_store(store)
 
 async def get_quiz(quiz_id: str):
+    if _db is not None:
+        doc = await _db.quizzes.find_one({"quiz_id": quiz_id})
+        if doc:
+            doc.pop("_id", None)
+            doc.pop("quiz_id", None)
+            return doc
+        return None
     return _load_store().get(quiz_id)
 
 async def save_payment(payment_id: str, data: dict):
-    store = _load_store(); store[f"payment_{payment_id}"] = data; _save_store(store)
+    if _db is not None:
+        await _db.payments.replace_one({"payment_id": payment_id}, data, upsert=True)
+    else:
+        store = _load_store(); store[f"payment_{payment_id}"] = data; _save_store(store)
 
 async def get_all_payments():
+    if _db is not None:
+        cursor = _db.payments.find({})
+        payments = []
+        async for doc in cursor:
+            doc.pop("_id", None)
+            payments.append(doc)
+        return payments
     store = _load_store()
     return [v for k, v in store.items() if k.startswith("payment_")]
 
 async def update_payment_status(payment_id: str, status: str):
-    store = _load_store()
-    key = f"payment_{payment_id}"
-    if key in store:
-        store[key]["status"] = status; _save_store(store)
+    if _db is not None:
+        await _db.payments.update_one({"payment_id": payment_id}, {"$set": {"status": status}})
+    else:
+        store = _load_store()
+        key = f"payment_{payment_id}"
+        if key in store:
+            store[key]["status"] = status; _save_store(store)
+
+async def get_payment(payment_id: str):
+    if _db is not None:
+        doc = await _db.payments.find_one({"payment_id": payment_id})
+        if doc:
+            doc.pop("_id", None)
+            return doc
+        return None
+    return _load_store().get(f"payment_{payment_id}")
 
 # ===== MODELS =====
 class QuizAnswers(BaseModel):
@@ -746,8 +794,7 @@ async def approve_payment(payment_id: str, secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    store   = _load_store()
-    payment = store.get(f"payment_{payment_id}")
+    payment = await get_payment(payment_id)
     if not payment:
         raise HTTPException(status_code=404, detail="Payment not found")
     if payment.get("status") == "approved":

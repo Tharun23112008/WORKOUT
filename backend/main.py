@@ -32,18 +32,17 @@ app.add_middleware(
 )
 
 # ===== MONGODB SETUP =====
-MONGODB_URL = os.environ.get("MONGODB_URL", "")
-db_client = None
-db = None
-
 @app.on_event("startup")
 async def startup_db():
     global db_client, db
     if MONGODB_URL:
         try:
-            db_client = AsyncIOMotorClient(MONGODB_URL, serverSelectionTimeoutMS=5000)
+            db_client = AsyncIOMotorClient(
+                MONGODB_URL,
+                serverSelectionTimeoutMS=5000,
+                tlsAllowInvalidCertificates=True  # Fix for Render SSL issue
+            )
             db = db_client["workout365"]
-            # Force a real connection check
             await db_client.admin.command("ping")
             print("✅ MongoDB connected")
         except Exception as e:

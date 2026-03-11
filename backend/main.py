@@ -586,18 +586,14 @@ async def send_emailjs(template_params: dict, template_id: str = None):
 
 async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str:
     """Upload PDF to Cloudinary and return a download URL."""
-
     timestamp = str(int(time_module.time()))
     public_id = f"365discipline/{filename}"
-
     params_str = f"public_id={public_id}&timestamp={timestamp}"
     signature = hashlib.sha1(
         f"{params_str}{CLOUDINARY_API_SECRET}".encode()
     ).hexdigest()
-
     pdf_b64 = base64.b64encode(pdf_buffer.read()).decode("utf-8")
     data_uri = f"data:application/pdf;base64,{pdf_b64}"
-
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(
             f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD}/raw/upload",
@@ -609,24 +605,21 @@ async def upload_pdf_to_cloudinary(pdf_buffer: io.BytesIO, filename: str) -> str
                 "signature": signature,
             }
         )
-
         if resp.status_code != 200:
             raise Exception(f"Cloudinary upload failed: {resp.text}")
-
         secure_url = resp.json()["secure_url"]
-
-        # convert to download link
         download_url = secure_url.replace(
             "/raw/upload/",
             "/raw/upload/fl_attachment/"
         )
-
         return download_url
+
 
 async def send_pdf_email(email: str, quiz_data: dict):
     """Generate PDF, upload to Cloudinary, send link via EmailJS."""
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
-    filename   = f"365_discipline_{email.split('@')[0]}_{uuid.uuid4().hex[:8]}.pdf"
+    email_prefix = email.split('@')[0].replace('.', '_').replace('+', '_')
+    filename     = f"365_discipline_{email_prefix}_{uuid.uuid4().hex[:8]}.pdf"
     pdf_url    = await upload_pdf_to_cloudinary(pdf_buffer, filename)
 
     m = quiz_data["macros"]
@@ -770,4 +763,4 @@ async def approve_payment(payment_id: str, secret: str):
     except Exception as e:
         await update_payment_status(payment_id, "send_failed")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"PDF send failed: {str(e)}"))}")

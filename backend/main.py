@@ -45,7 +45,7 @@ async def startup_db():
     else:
         print("⚠️ No MONGODB_URL — falling back to in-memory store")
 
-# Fallback in-memory store (used if MongoDB not configured)
+# Fallback in-memory store
 quiz_store = {}
 
 async def save_quiz(quiz_id: str, data: dict):
@@ -71,8 +71,10 @@ async def save_payment(payment_id: str, data: dict):
 async def get_all_payments():
     if db is not None:
         cursor = db.payments.find({})
-        return await cursor.to_list(length=100)
-    # fallback
+        docs = await cursor.to_list(length=100)
+        for doc in docs:
+            doc.pop("_id", None)  # FIX: remove _id here too
+        return docs
     return [v for k, v in quiz_store.items() if k.startswith("payment_")]
 
 async def update_payment_status(payment_id: str, status: str):
@@ -87,7 +89,7 @@ async def update_payment_status(payment_id: str, status: str):
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL", "tharunatwork23@gmail.com")
 SMTP_PASSWORD = os.environ.get("SMTP_APP_PASSWORD", "")
 NOTIFY_EMAIL = os.environ.get("NOTIFY_EMAIL", "tharunatwork23@gmail.com")
-ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")  # Secret key to protect admin routes
+ADMIN_SECRET = os.environ.get("ADMIN_SECRET", "tharun365admin")
 
 # ===== MODELS =====
 class QuizAnswers(BaseModel):
@@ -138,8 +140,12 @@ def calculate_macros(answers):
     calories = tdee + goal_adjustments.get(answers.goal, 0)
     protein_per_kg = {"gain_muscle": 2.0, "lose_fat": 2.2, "recomposition": 2.0}.get(answers.goal, 2.0)
     protein = int(answers.weight * protein_per_kg)
-    if answers.dietary_preference.lower() == "vegetarian":
+
+    # FIX: normalize dietary_preference before comparison
+    diet = answers.dietary_preference.lower().strip()
+    if diet == "vegetarian":
         protein = int(protein * 0.95)
+
     carbs = int((calories * 0.45) / 4)
     fats = int((calories * 0.25) / 9)
     return {"calories": calories, "protein": protein, "carbs": carbs, "fats": fats}
@@ -288,7 +294,13 @@ def generate_pdf(answers, macros, user_email):
     story.append(Spacer(1, 20))
 
     story.append(Paragraph("NUTRITION GUIDE", heading_style))
-    diet = answers.get("dietary_preference", "non_vegetarian")
+
+    # FIX: normalize diet string — lowercase + strip + handle both spellings
+    diet = answers.get("dietary_preference", "non_vegetarian").lower().strip()
+    # Treat "eggetarian" and "eggitarian" as the same
+    if diet in ("eggetarian", "eggitarian"):
+        diet = "eggetarian"
+
     if diet == "vegetarian":
         meal_examples = [
             ("Breakfast", f"~{int(macros['calories']*0.25)} kcal", "Paneer bhurji with whole wheat roti + milk"),
@@ -298,7 +310,7 @@ def generate_pdf(answers, macros, user_email):
             ("Dinner", f"~{int(macros['calories']*0.20)} kcal", "Tofu stir fry + quinoa/roti + vegetables"),
             ("Before bed", f"~{int(macros['calories']*0.05)} kcal", "Cottage cheese (paneer) or Greek yogurt"),
         ]
-    elif diet == "eggitarian":
+    elif diet == "eggetarian":
         meal_examples = [
             ("Breakfast", f"~{int(macros['calories']*0.25)} kcal", "4 eggs (2 whole + 2 whites) + oats + fruit"),
             ("Lunch", f"~{int(macros['calories']*0.35)} kcal", "Rice + dal + egg curry + salad"),
@@ -376,6 +388,9 @@ def generate_pdf(answers, macros, user_email):
 
 def send_pdf_email(email: str, quiz_data: dict):
     """Send PDF blueprint to customer email."""
+    if not SMTP_PASSWORD:
+        raise ValueError("SMTP_APP_PASSWORD environment variable is not set. Cannot send email.")
+
     pdf_buffer = generate_pdf(quiz_data["answers"], quiz_data["macros"], email)
     msg = MIMEMultipart()
     msg["From"] = SMTP_EMAIL
@@ -403,7 +418,9 @@ Stay consistent. Results take time.
     encoders.encode_base64(pdf_attachment)
     pdf_attachment.add_header("Content-Disposition", "attachment", filename="365_Days_of_Discipline.pdf")
     msg.attach(pdf_attachment)
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+
+    # FIX: explicit timeout to prevent hanging forever
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
         server.login(SMTP_EMAIL, SMTP_PASSWORD)
         server.sendmail(SMTP_EMAIL, email, msg.as_string())
 
@@ -415,7 +432,11 @@ async def root():
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "smtp_configured": bool(SMTP_PASSWORD), "mongodb_configured": bool(MONGODB_URL)}
+    return {
+        "status": "ok",
+        "smtp_configured": bool(SMTP_PASSWORD),
+        "mongodb_configured": bool(MONGODB_URL)
+    }
 
 @app.post("/api/quiz/submit", response_model=QuizResponse)
 async def submit_quiz(answers: QuizAnswers):
@@ -442,11 +463,21 @@ async def submit_payment(
     screenshot: UploadFile = File(...)
 ):
     try:
-        screenshot_data = await screenshot.read()
-        quiz_data = await get_quiz(quiz_id)
-        payment_id = str(uuid.uuid4())
+        # FIX: validate file is an image
+        if screenshot.content_type and not screenshot.content_type.startswith("image/"):
+            raise HTTPException(status_code=400, detail="Uploaded file must be an image.")
 
-        # Save payment record
+        screenshot_data = await screenshot.read()
+
+        # FIX: validate file size (max 10MB)
+        if len(screenshot_data) > 10 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Screenshot file too large. Max 10MB.")
+
+        quiz_data = await get_quiz(quiz_id)
+        if not quiz_data:
+            raise HTTPException(status_code=404, detail="Quiz session not found. Please retake the quiz.")
+
+        payment_id = str(uuid.uuid4())
         payment_record = {
             "payment_id": payment_id,
             "quiz_id": quiz_id,
@@ -489,14 +520,23 @@ Payment screenshot attached."""
                 img_part.add_header("Content-Disposition", "attachment",
                                     filename=f"payment_{payment_id[:8]}.jpg")
                 msg.attach(img_part)
-                with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+                with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
                     server.login(SMTP_EMAIL, SMTP_PASSWORD)
                     server.sendmail(SMTP_EMAIL, NOTIFY_EMAIL, msg.as_string())
             except Exception as e:
-                print(f"Admin email error: {e}")
+                # FIX: log the error but don't crash — payment is saved, admin can still approve manually
+                print(f"⚠️ Admin notification email failed: {e}")
+        else:
+            print("⚠️ SMTP_APP_PASSWORD not set — skipping admin email notification")
 
-        return {"status": "success", "message": "Payment submitted. You'll receive your PDF within 24 hours after verification."}
+        return {
+            "status": "success",
+            "payment_id": payment_id,  # FIX: return payment_id so frontend can reference it
+            "message": "Payment submitted. You'll receive your PDF within 24 hours after verification."
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -507,9 +547,6 @@ async def list_payments(secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
     payments = await get_all_payments()
-    # Remove _id field for clean response
-    for p in payments:
-        p.pop("_id", None)
     return {"payments": payments}
 
 
@@ -519,9 +556,10 @@ async def approve_payment(payment_id: str, secret: str):
     if secret != ADMIN_SECRET:
         raise HTTPException(status_code=403, detail="Unauthorized")
 
-    # Fetch payment from DB
     if db is not None:
         payment = await db.payments.find_one({"_id": payment_id})
+        if payment:
+            payment.pop("_id", None)
     else:
         payment = quiz_store.get(f"payment_{payment_id}")
 
@@ -529,25 +567,27 @@ async def approve_payment(payment_id: str, secret: str):
         raise HTTPException(status_code=404, detail="Payment not found")
 
     if payment.get("status") == "approved":
-        return {"status": "already_approved", "message": "PDF was already sent to this customer."}
+        return {"status": "already_approved", "message": f"PDF was already sent to {payment.get('email')}."}
 
     email = payment["email"]
     quiz_data = payment.get("quiz_data")
 
     if not quiz_data:
-        # Try fetching from quiz store
         quiz_data = await get_quiz(payment["quiz_id"])
 
     if not quiz_data:
         raise HTTPException(status_code=404, detail="Quiz data not found. Cannot generate PDF.")
 
-    # Send PDF to customer
+    # FIX: update status BEFORE sending to prevent double-send on retry
+    await update_payment_status(payment_id, "approved")
+
     try:
         send_pdf_email(email, quiz_data)
-        await update_payment_status(payment_id, "approved")
         return {
             "status": "success",
             "message": f"✅ PDF sent to {email} successfully!"
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send PDF: {str(e)}")
+        # FIX: revert status if send failed so admin can retry
+        await update_payment_status(payment_id, "send_failed")
+        raise HTTPException(status_code=500, detail=f"Payment approved but PDF failed to send: {str(e)}. Check SMTP settings.")

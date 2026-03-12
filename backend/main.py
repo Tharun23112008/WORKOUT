@@ -57,6 +57,20 @@ def _get_conn():
     return conn
 
 @app.on_event("startup")
+async def start_keepalive():
+    import asyncio
+    async def ping():
+        while True:
+            await asyncio.sleep(600)  # every 10 minutes
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.get("https://workout-h4i4.onrender.com/api/health")
+                print("✅ Keep-alive ping sent")
+            except Exception:
+                pass
+    asyncio.create_task(ping())
+
+@app.on_event("startup")
 async def startup_db():
     conn = _get_conn()
     conn.execute("""
